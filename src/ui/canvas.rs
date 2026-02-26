@@ -19,8 +19,9 @@ pub fn draw_canvas(state: &mut AppState, ctx: &egui::Context) {
             state.dragging_data_idx = None;
         }
 
+        let can_delete = !ctx.wants_keyboard_input() || response.has_focus();
         if (ctx.input(|i| i.key_pressed(egui::Key::Delete) || i.key_pressed(egui::Key::Backspace)))
-            && !ctx.wants_keyboard_input()
+            && can_delete
         {
             let mut to_remove: Vec<usize> = state.selected_data_indices.iter().copied().collect();
             to_remove.sort_unstable_by(|a, b| b.cmp(a));
