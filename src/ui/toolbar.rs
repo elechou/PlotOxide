@@ -25,7 +25,7 @@ pub fn draw_toolbar(
                 actions.push(Action::ClearSelection);
             }
             if ui
-                .selectable_label(state.mode == AppMode::AddData, "🎯 Add Data")
+                .selectable_label(state.mode == AppMode::AddData, "➕ Add Data")
                 .on_hover_text("Pick new points (disabled without 4 calib pts)")
                 .clicked()
             {
@@ -48,7 +48,7 @@ pub fn draw_toolbar(
                 actions.push(Action::SetMode(AppMode::Pan));
             }
             if ui
-                .button("🎯 Center")
+                .button("⛶ Center")
                 .on_hover_text("Center canvas to fit window")
                 .clicked()
             {
