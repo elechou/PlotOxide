@@ -306,6 +306,174 @@ pub fn draw_canvas(state: &AppState, ctx: &egui::Context, actions: &mut Vec<Acti
             painter.circle_filled(sp, r_in, col);
         };
 
+        // Draw Axes based on Calib Points
+        if !state.calib_pts.is_empty() {
+            let p_len = state.calib_pts.len();
+
+            let draw_dashed_line = |painter: &egui::Painter, p1: Pos2, p2: Pos2, stroke: Stroke| {
+                let dir = (p2 - p1).normalized();
+                if dir.x.is_nan() || dir.y.is_nan() {
+                    return;
+                }
+                let length = p1.distance(p2);
+                let dash_len = 6.0;
+                let gap_len = 4.0;
+                let mut t = 0.0;
+                while t < length {
+                    let start = p1 + dir * t;
+                    let end = p1 + dir * (t + dash_len).min(length);
+                    painter.line_segment([start, end], stroke);
+                    t += dash_len + gap_len;
+                }
+            };
+
+            let draw_dashed_line_inf =
+                |painter: &egui::Painter, p1: Pos2, dir: Vec2, stroke: Stroke| {
+                    if dir.x.is_nan() || dir.y.is_nan() {
+                        return;
+                    }
+                    let dash_len = 6.0;
+                    let gap_len = 4.0;
+                    let mut t = -4000.0;
+                    while t < 4000.0 {
+                        let start = p1 + dir * t;
+                        let end = p1 + dir * (t + dash_len);
+                        painter.line_segment([start, end], stroke);
+                        t += dash_len + gap_len;
+                    }
+                };
+
+            // X-Axis logic: calib_pts[0] and [1]
+            if p_len >= 2 {
+                let x1_pos = to_screen(
+                    state.calib_pts[0].px,
+                    state.calib_pts[0].py,
+                    state.pan,
+                    state.zoom,
+                );
+                let x2_pos = to_screen(
+                    state.calib_pts[1].px,
+                    state.calib_pts[1].py,
+                    state.pan,
+                    state.zoom,
+                );
+
+                // 1. Dashed line through X1 and X2 (slope)
+                let dir_x1x2 = (x2_pos - x1_pos).normalized();
+                draw_dashed_line_inf(
+                    &painter,
+                    x1_pos,
+                    dir_x1x2,
+                    Stroke::new(1.0, GOOGLE_BLUE.linear_multiply(0.5)),
+                );
+
+                // 2. Dashed horizontal line through X1
+                draw_dashed_line_inf(
+                    &painter,
+                    x1_pos,
+                    Vec2::new(1.0, 0.0),
+                    Stroke::new(1.0, GOOGLE_BLUE.linear_multiply(0.5)),
+                );
+
+                // 3. Dashed vertical line passing through X2 to X1's horizontal baseline
+                let proj_x2 = Pos2::new(x2_pos.x, x1_pos.y);
+                draw_dashed_line(
+                    &painter,
+                    x2_pos,
+                    proj_x2,
+                    Stroke::new(1.0, GOOGLE_BLUE.linear_multiply(0.5)),
+                );
+
+                // 4. Thick solid horizontal line from X1.x to X2.x along X1's baseline
+                painter.line_segment(
+                    [Pos2::new(x1_pos.x, x1_pos.y), Pos2::new(x2_pos.x, x1_pos.y)],
+                    Stroke::new(3.0, GOOGLE_BLUE),
+                );
+
+                // Add text below X1 and X2 on the thick line
+                let text_color = GOOGLE_BLUE;
+                painter.text(
+                    Pos2::new(x1_pos.x, x1_pos.y + 15.0),
+                    egui::Align2::CENTER_TOP,
+                    &state.x1_val,
+                    egui::FontId::proportional(14.0),
+                    text_color,
+                );
+                painter.text(
+                    Pos2::new(x2_pos.x, x1_pos.y + 15.0),
+                    egui::Align2::CENTER_TOP,
+                    &state.x2_val,
+                    egui::FontId::proportional(14.0),
+                    text_color,
+                );
+            }
+
+            // Y-Axis logic
+            if p_len >= 4 {
+                let y1_pos = to_screen(
+                    state.calib_pts[2].px,
+                    state.calib_pts[2].py,
+                    state.pan,
+                    state.zoom,
+                );
+                let y2_pos = to_screen(
+                    state.calib_pts[3].px,
+                    state.calib_pts[3].py,
+                    state.pan,
+                    state.zoom,
+                );
+
+                // 1. Dashed line through Y1 and Y2 (slope)
+                let dir_y1y2 = (y2_pos - y1_pos).normalized();
+                draw_dashed_line_inf(
+                    &painter,
+                    y1_pos,
+                    dir_y1y2,
+                    Stroke::new(1.0, GOOGLE_GREEN.linear_multiply(0.5)),
+                );
+
+                // 2. Dashed vertical line through Y1
+                draw_dashed_line_inf(
+                    &painter,
+                    y1_pos,
+                    Vec2::new(0.0, 1.0),
+                    Stroke::new(1.0, GOOGLE_GREEN.linear_multiply(0.5)),
+                );
+
+                // 3. Dashed horizontal line passing through Y2 to Y1's vertical baseline
+                let proj_y2 = Pos2::new(y1_pos.x, y2_pos.y);
+                draw_dashed_line(
+                    &painter,
+                    y2_pos,
+                    proj_y2,
+                    Stroke::new(1.0, GOOGLE_GREEN.linear_multiply(0.5)),
+                );
+
+                // 4. Thick solid vertical line from Y1.y to Y2.y along Y1's vertical baseline
+                painter.line_segment(
+                    [Pos2::new(y1_pos.x, y1_pos.y), Pos2::new(y1_pos.x, y2_pos.y)],
+                    Stroke::new(3.0, GOOGLE_GREEN),
+                );
+
+                // Add text left to Y1 and Y2
+                let text_color = GOOGLE_GREEN;
+                painter.text(
+                    Pos2::new(y1_pos.x - 15.0, y1_pos.y),
+                    egui::Align2::RIGHT_CENTER,
+                    &state.y1_val,
+                    egui::FontId::proportional(14.0),
+                    text_color,
+                );
+                painter.text(
+                    Pos2::new(y1_pos.x - 15.0, y2_pos.y),
+                    egui::Align2::RIGHT_CENTER,
+                    &state.y2_val,
+                    egui::FontId::proportional(14.0),
+                    text_color,
+                );
+            }
+        }
+
         // Draw Points
         for (i, p) in state.data_pts.iter().enumerate() {
             let sp = to_screen(p.px, p.py, state.pan, state.zoom);
