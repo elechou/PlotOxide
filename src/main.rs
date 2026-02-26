@@ -25,7 +25,7 @@ impl PlotDigitizerApp {
         let mut style = (*cc.egui_ctx.style()).clone();
         style.visuals = egui::Visuals::dark();
         cc.egui_ctx.set_style(style);
-        
+
         Self::default()
     }
 }
@@ -38,11 +38,10 @@ impl eframe::App for PlotDigitizerApp {
 
 fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_inner_size([1200.0, 800.0]),
+        viewport: egui::ViewportBuilder::default().with_inner_size([1200.0, 800.0]),
         ..Default::default()
     };
-    
+
     eframe::run_native(
         "PlotDigitizer",
         options,

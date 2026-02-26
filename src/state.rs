@@ -8,11 +8,13 @@ pub struct PointGroup {
     pub color: Color32,
 }
 
-#[derive(PartialEq, Clone, Copy)]
+#[derive(PartialEq, Clone, Copy, Debug)]
 pub enum AppMode {
-    Idle,
+    Select,
     AddCalib,
     AddData,
+    Delete,
+    Pan,
 }
 
 pub struct AppState {
@@ -45,15 +47,19 @@ pub struct AppState {
     pub dragging_calib_idx: Option<usize>,
     pub dragging_data_idx: Option<usize>,
     pub selected_calib_idx: Option<usize>,
-    pub selected_data_idx: Option<usize>,
+    pub selected_data_indices: std::collections::HashSet<usize>,
     pub hovered_calib_idx: Option<usize>,
     pub hovered_data_idx: Option<usize>,
+
+    // Transient Box Select state
+    pub box_start: Option<eframe::egui::Pos2>,
+    pub center_requested: bool,
 }
 
 impl Default for AppState {
     fn default() -> Self {
         Self {
-            mode: AppMode::Idle,
+            mode: AppMode::Select,
             image_path: None,
             texture: None,
             img_size: Vec2::ZERO,
@@ -75,9 +81,11 @@ impl Default for AppState {
             dragging_calib_idx: None,
             dragging_data_idx: None,
             selected_calib_idx: None,
-            selected_data_idx: None,
+            selected_data_indices: std::collections::HashSet::new(),
             hovered_calib_idx: None,
             hovered_data_idx: None,
+            box_start: None,
+            center_requested: false,
         }
     }
 }

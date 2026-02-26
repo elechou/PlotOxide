@@ -2,7 +2,7 @@
 name = "plot-digitizer"
 version = "0.1.0"
 edition = "2021"
-authors = ["Antigravity"]
+authors = ["Qiu Shou", "Antigravity"]
 description = "Native absolute high-performance web plot digitizer alternative using Rust+egui"
 
 [dependencies]
