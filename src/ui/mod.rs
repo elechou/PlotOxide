@@ -14,6 +14,17 @@ pub fn draw_ui(state: &AppState, ctx: &egui::Context, actions: &mut Vec<Action>)
             ui.heading("PlotDigitizer");
             ui.add_space(20.0);
 
+            let is_dark = ctx.style().visuals.dark_mode;
+            let icon = if is_dark { "☀" } else { "🌙" };
+            if ui.button(icon).clicked() {
+                if is_dark {
+                    ctx.set_visuals(egui::Visuals::light());
+                } else {
+                    ctx.set_visuals(egui::Visuals::dark());
+                }
+            }
+            ui.add_space(10.0);
+
             if ui.button("Load Image").clicked() {
                 crate::ui::panel::load_image(ctx, actions);
             }

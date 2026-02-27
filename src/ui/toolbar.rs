@@ -12,7 +12,7 @@ pub fn draw_toolbar(
         .collapsible(false)
         .resizable(false)
         .title_bar(false)
-        .anchor(egui::Align2::RIGHT_TOP, [-20.0, 20.0]);
+        .anchor(egui::Align2::RIGHT_TOP, [-20.0, 50.0]);
 
     window.show(ui.ctx(), |ui| {
         ui.horizontal(|ui| {

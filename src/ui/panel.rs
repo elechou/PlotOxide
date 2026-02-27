@@ -20,14 +20,11 @@ pub fn draw_panel(state: &AppState, ctx: &egui::Context, actions: &mut Vec<Actio
 
                 ui.add_enabled_ui(state.texture.is_some(), |ui| {
                     // Unified card style
-                    let frame = egui::Frame::group(ui.style())
-                        .fill(Color32::from_gray(35))
-                        .inner_margin(12.0)
-                        .corner_radius(5.0);
-
+                    
                     // Section 1: Calibration
-                    frame.show(ui, |ui| {
-                        ui.strong("1. Axes Calibration");
+
+                    
+                    ui.strong("1. Axes Calibration");
                         ui.add_space(10.0);
 
                         ui.horizontal(|ui| {
@@ -99,12 +96,17 @@ pub fn draw_panel(state: &AppState, ctx: &egui::Context, actions: &mut Vec<Actio
                                 actions.push(Action::UpdateLogScale(state.log_x, log_y));
                             }
                         });
-                    });
+                    
+
 
                     ui.add_space(15.0);
 
+                    ui.separator();
+
+                    ui.add_space(15.0);
+
+
                     // Section 2: Extraction
-                    frame.show(ui, |ui| {
                         ui.strong("2. Data Extraction");
                         ui.add_space(10.0);
 
@@ -347,9 +349,7 @@ pub fn draw_panel(state: &AppState, ctx: &egui::Context, actions: &mut Vec<Actio
 
                                     ui.add_space(8.0);
                                 }
-                            });
-                    });
-                });
+                            });                });
             });
         });
 }
