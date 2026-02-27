@@ -8,6 +8,14 @@ pub struct PointGroup {
     pub color: Color32,
 }
 
+#[derive(Clone)]
+pub struct HistorySnapshot {
+    pub calib_pts: Vec<CalibPoint>,
+    pub data_pts: Vec<DataPoint>,
+    pub groups: Vec<PointGroup>,
+    pub active_group_idx: usize,
+}
+
 #[derive(PartialEq, Clone, Copy, Debug)]
 pub enum AppMode {
     Select,
@@ -56,6 +64,10 @@ pub struct AppState {
     pub box_start: Option<eframe::egui::Pos2>,
     pub center_requested: bool,
     pub pending_clear_data: bool,
+
+    // History
+    pub undo_stack: Vec<HistorySnapshot>,
+    pub redo_stack: Vec<HistorySnapshot>,
 }
 
 impl Default for AppState {
@@ -90,13 +102,54 @@ impl Default for AppState {
             box_start: None,
             center_requested: false,
             pending_clear_data: false,
+            undo_stack: Vec::new(),
+            redo_stack: Vec::new(),
         }
     }
 }
 
 impl AppState {
+    pub fn save_snapshot(&mut self) {
+        let snapshot = HistorySnapshot {
+            calib_pts: self.calib_pts.clone(),
+            data_pts: self.data_pts.clone(),
+            groups: self.groups.clone(),
+            active_group_idx: self.active_group_idx,
+        };
+        self.undo_stack.push(snapshot);
+        if self.undo_stack.len() > 50 {
+            self.undo_stack.remove(0);
+        }
+        self.redo_stack.clear();
+    }
+
     pub fn update(&mut self, action: crate::action::Action) {
         use crate::action::Action;
+
+        // Determine if this action should push a history state BEFORE mutating
+        match action {
+            Action::MovePointsToGroup { .. }
+            | Action::DeleteSelectedPoints
+            | Action::RemoveDataPoint(_)
+            | Action::DeleteGroup(_)
+            | Action::UpdateGroupName(_, _)
+            | Action::UpdateGroupColor(_, _)
+            | Action::AddCalibPoint { .. }
+            | Action::AddDataPoint { .. }
+            | Action::ClearData
+            | Action::ClearCalib => {
+                self.save_snapshot();
+            }
+            // `MoveSelected` is special: we only snapshot when the drag STARTS.
+            // So we hook `SetDraggingPoint` or `SetBoxStart` or `SelectPoints`?
+            // Wait, what if we just trigger it on `StopDragging`? No, because then it saves the POST drag state BEFORE we apply Next action.
+            // The cleanest way for continuous drags is to save on `SetDraggingPoint`.
+            Action::SetDraggingPoint { .. } => {
+                self.save_snapshot();
+            }
+            _ => {}
+        }
+
         match action {
             Action::MovePointsToGroup {
                 indices,
@@ -312,6 +365,62 @@ impl AppState {
             }
             Action::CancelClearData => {
                 self.pending_clear_data = false;
+            }
+            Action::Undo => {
+                if let Some(snapshot) = self.undo_stack.pop() {
+                    let redo_snap = HistorySnapshot {
+                        calib_pts: self.calib_pts.clone(),
+                        data_pts: self.data_pts.clone(),
+                        groups: self.groups.clone(),
+                        active_group_idx: self.active_group_idx,
+                    };
+                    self.redo_stack.push(redo_snap);
+
+                    self.calib_pts = snapshot.calib_pts;
+                    self.data_pts = snapshot.data_pts;
+                    self.groups = snapshot.groups;
+                    self.active_group_idx = snapshot.active_group_idx;
+
+                    self.selected_data_indices.clear();
+                    crate::core::recalculate_data(
+                        &self.calib_pts,
+                        &mut self.data_pts,
+                        &self.x1_val,
+                        &self.x2_val,
+                        &self.y1_val,
+                        &self.y2_val,
+                        self.log_x,
+                        self.log_y,
+                    );
+                }
+            }
+            Action::Redo => {
+                if let Some(snapshot) = self.redo_stack.pop() {
+                    let undo_snap = HistorySnapshot {
+                        calib_pts: self.calib_pts.clone(),
+                        data_pts: self.data_pts.clone(),
+                        groups: self.groups.clone(),
+                        active_group_idx: self.active_group_idx,
+                    };
+                    self.undo_stack.push(undo_snap);
+
+                    self.calib_pts = snapshot.calib_pts;
+                    self.data_pts = snapshot.data_pts;
+                    self.groups = snapshot.groups;
+                    self.active_group_idx = snapshot.active_group_idx;
+
+                    self.selected_data_indices.clear();
+                    crate::core::recalculate_data(
+                        &self.calib_pts,
+                        &mut self.data_pts,
+                        &self.x1_val,
+                        &self.x2_val,
+                        &self.y1_val,
+                        &self.y2_val,
+                        self.log_x,
+                        self.log_y,
+                    );
+                }
             }
             Action::ClearData => {
                 self.data_pts.clear();

@@ -1,3 +1,4 @@
+#[derive(Clone, Copy)]
 pub struct CalibPoint {
     pub px: f32,
     pub py: f32,

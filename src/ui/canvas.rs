@@ -164,6 +164,19 @@ pub fn draw_canvas(state: &AppState, ctx: &egui::Context, actions: &mut Vec<Acti
                 actions.push(Action::SetHoveredData(hover_hit_data));
             }
 
+            let is_alt_pressed = ctx.input(|i| i.modifiers.alt);
+            let effective_mode = if is_alt_pressed
+                && (state.mode == AppMode::Select || state.mode == AppMode::AddData)
+            {
+                AppMode::Delete
+            } else {
+                state.mode.clone()
+            };
+
+            if effective_mode == AppMode::Delete {
+                ctx.set_cursor_icon(egui::CursorIcon::Crosshair);
+            }
+
             if response.drag_started_by(egui::PointerButton::Primary) {
                 if let Some(idx) = press_hit_calib {
                     actions.push(Action::SetDraggingPoint {
@@ -194,13 +207,13 @@ pub fn draw_canvas(state: &AppState, ctx: &egui::Context, actions: &mut Vec<Acti
             }
 
             if response.clicked_by(egui::PointerButton::Primary) {
-                if state.mode == AppMode::Delete {
+                if effective_mode == AppMode::Delete {
                     if let Some(idx) = press_hit_data {
                         actions.push(Action::RemoveDataPoint(idx));
-                    } else {
+                    } else if state.mode == AppMode::Delete {
                         actions.push(Action::SetMode(AppMode::Select));
                     }
-                } else if state.mode == AppMode::Select {
+                } else if effective_mode == AppMode::Select {
                     if let Some(idx) = press_hit_calib {
                         actions.push(Action::SelectCalibPoint(idx));
                     } else if let Some(idx) = press_hit_data {
@@ -235,6 +248,51 @@ pub fn draw_canvas(state: &AppState, ctx: &egui::Context, actions: &mut Vec<Acti
                     }
                 }
             }
+
+            if response.clicked_by(egui::PointerButton::Secondary) {
+                if let Some(idx) = press_hit_data {
+                    // Ensure the right-clicked point is selected if it wasn't already
+                    if !state.selected_data_indices.contains(&idx) {
+                        actions.push(Action::SelectPoints(vec![idx], false));
+                    }
+                }
+            }
+
+            response.context_menu(|ui| {
+                ui.set_min_width(120.0);
+                ui.set_max_width(120.0);
+                if !state.selected_data_indices.is_empty() {
+                    let num_selected = state.selected_data_indices.len();
+                    ui.label(format!("Options ({} selected)", num_selected));
+                    ui.separator();
+
+                    ui.menu_button("Move to Group", |ui| {
+                        for (g_idx, group) in state.groups.iter().enumerate() {
+                            let mut btn_text = egui::RichText::new(&group.name);
+                            btn_text = btn_text.color(group.color);
+                            if ui.button(btn_text).clicked() {
+                                actions.push(Action::MovePointsToGroup {
+                                    indices: state.selected_data_indices.iter().copied().collect(),
+                                    new_group_id: g_idx,
+                                });
+                                ui.close();
+                            }
+                        }
+                    });
+
+                    if ui
+                        .button(egui::RichText::new("Delete").color(Color32::RED))
+                        .clicked()
+                    {
+                        actions.push(Action::DeleteSelectedPoints);
+                        ui.close();
+                    }
+                } else {
+                    ui.label(
+                        egui::RichText::new("Select points to see options.").color(Color32::GRAY),
+                    );
+                }
+            });
 
             if response.dragged_by(egui::PointerButton::Primary) && state.mode != AppMode::Pan {
                 let drag_delta = response.drag_delta() / state.zoom;

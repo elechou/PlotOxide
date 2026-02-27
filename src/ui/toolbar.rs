@@ -33,8 +33,10 @@ pub fn draw_toolbar(
                     actions.push(Action::SetMode(AppMode::AddData));
                 }
             }
+
+            let is_alt_pressed = ui.ctx().input(|i| i.modifiers.alt);
             if ui
-                .selectable_label(state.mode == AppMode::Delete, "❌ Delete")
+                .selectable_label(state.mode == AppMode::Delete || is_alt_pressed, "❌ Delete")
                 .on_hover_text("Click points to delete them")
                 .clicked()
             {

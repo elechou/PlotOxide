@@ -80,6 +80,23 @@ pub fn draw_ui(state: &AppState, ctx: &egui::Context, actions: &mut Vec<Action>)
         {
             paste_requested = true;
         }
+
+        let undo_cmd = egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::Z);
+        let undo_ctrl = egui::KeyboardShortcut::new(egui::Modifiers::CTRL, egui::Key::Z);
+        let redo_cmd = egui::KeyboardShortcut::new(
+            egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
+            egui::Key::Z,
+        );
+        let redo_ctrl = egui::KeyboardShortcut::new(
+            egui::Modifiers::CTRL | egui::Modifiers::SHIFT,
+            egui::Key::Z,
+        );
+
+        if i.consume_shortcut(&redo_cmd) || i.consume_shortcut(&redo_ctrl) {
+            actions.push(Action::Redo);
+        } else if i.consume_shortcut(&undo_cmd) || i.consume_shortcut(&undo_ctrl) {
+            actions.push(Action::Undo);
+        }
     });
 
     if let Some(path) = dropped_path {

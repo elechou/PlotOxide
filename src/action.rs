@@ -44,6 +44,8 @@ pub enum Action {
     LoadImage(PathBuf, eframe::egui::TextureHandle, eframe::egui::Vec2),
     SetPendingImage(PathBuf, eframe::egui::TextureHandle, eframe::egui::Vec2),
     CancelPendingImage,
+    Undo,
+    Redo,
     ClearSelection,
     RequestCenter,
     CenterCanvas(eframe::egui::Rect),
