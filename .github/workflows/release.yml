@@ -22,7 +22,7 @@ jobs:
           - os: macos-latest # M1/M2/M3 (arm64)
             target: aarch64-apple-darwin
             artifact_name: PlotOxide-macOS-arm64.zip
-          - os: macos-13     # Intel (x86_64)
+          - os: macos-latest # Cross-compile for Intel (x86_64)
             target: x86_64-apple-darwin
             artifact_name: PlotOxide-macOS-x86_64.zip
 
