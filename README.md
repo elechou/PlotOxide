@@ -2,7 +2,7 @@
 
 A native, high-performance plot digitizer built with **Rust** and **egui**. Load an image of a chart or plot, calibrate the axes, click on data points, and export the extracted coordinates to CSV — with a built-in **scripting IDE** for on-the-fly data analysis.
 
-![PlotOxide Screenshot](screen_shoot.png)
+![PlotOxide Screenshot](screenshot.png)
 
 ## Features
 
@@ -166,13 +166,17 @@ PlotOxide/
 │   └── script/
 │       ├── mod.rs        # Rhai engine setup and data binding
 │       └── math.rs       # Math and regression functions
+├── assets/
+│   ├── icon.icns          # macOS app icon
+│   ├── icon.ico           # Windows app icon
+│   └── icon.png           # PNG icon (1024×1024)
 ├── example_scripts/       # Built-in script templates (.rhai)
 ├── docs/
 │   └── scripting_help.md  # Scripting reference (embedded at build)
-├── build.rs               # Auto-discovers example scripts
+├── build.rs               # Auto-discovers example scripts & embeds Windows icon
 ├── Cargo.toml             # Dependencies and build configuration
 ├── sample_plot.png        # Example plot image
-└── screen_shoot.png       # Application screenshot
+└── screenshot.png         # Application screenshot
 ```
 
 ## Adding Custom Script Templates

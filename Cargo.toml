@@ -30,4 +30,4 @@ winres = "0.1.12"
 
 [package.metadata.bundle]
 identifier = "com.elechou.plot-oxide"
-icon = ["assets/icon.png"]
+icon = ["assets/icon.icns", "assets/icon.ico", "assets/icon.png"]
