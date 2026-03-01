@@ -1,0 +1,33 @@
+[package]
+name = "plot-oxide"
+version = "0.1.0"
+edition = "2021"
+authors = ["Qiu Shou", "Antigravity"]
+description = "Native absolute high-performance web plot digitizer alternative using Rust+egui"
+license = "MIT"
+
+[dependencies]
+eframe = { version = "0.33.3", default-features = false, features = [
+    "default_fonts", # Default fonts
+    "glow",          # fallback to glow
+] }
+egui = "0.33.3"
+egui_extras = { version = "0.33.3", features = ["image", "syntect"] }
+syntect = "5.3.0"
+image = { version = "0.24", features = ["jpeg", "png"] }
+rfd = "0.14" # File dialog Dialog
+csv = "1.3.0"
+clipboard-rs = "0.3.3"
+rhai = "1.24.0"
+nalgebra = "0.33"
+
+[profile.release]
+opt-level = 3
+lto = true
+
+[build-dependencies]
+winres = "0.1.12"
+
+[package.metadata.bundle]
+identifier = "com.elechou.plot-oxide"
+icon = ["assets/icon.png"]

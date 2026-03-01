@@ -1,0 +1,184 @@
+# PlotOxide
+
+A native, high-performance plot digitizer built with **Rust** and **egui**. Load an image of a chart or plot, calibrate the axes, click on data points, and export the extracted coordinates to CSV — with a built-in **scripting IDE** for on-the-fly data analysis.
+
+![PlotOxide Screenshot](screen_shoot.png)
+
+## Features
+
+### Core Digitizing
+- Load images via file dialog, drag-and-drop, or clipboard paste
+- 4-point axis calibration with support for linear and logarithmic scales
+- Multiple data series (groups) with distinct colors and drag-and-drop organization
+- Export extracted data to CSV
+- Undo / Redo support
+- Dark and light themes
+- Cross-platform (Linux, macOS, Windows)
+
+### Script IDE
+- Built-in live scripting IDE powered by [Rhai](https://rhai.rs/) (Rust-embedded scripting language)
+- **Script Templates** — pre-built examples ready to use:
+  - Basic syntax & functions demo
+  - Linear regression for all groups
+  - Quadratic (polynomial) regression
+  - Steinmetz parameter fitting (multi-variate OLS)
+- **Workspace panel** — inspect all variables after script execution, click to view data tables
+- **Import / Export** — save and load `.rhai` script files
+- **📖 Help** — built-in scripting reference with syntax guide and full API documentation
+
+### Math & Analysis API
+Scripts have access to a rich set of built-in functions:
+
+| Category | Functions |
+|----------|-----------|
+| Math | `abs`, `sqrt`, `ln`, `log10`, `log2`, `exp`, `pow`, `pow10`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `floor`, `ceil`, `round`, `round_to`, `PI()` |
+| Array | `sum`, `mean`, `min_val`, `max_val`, `std_dev`, `variance`, `log10_array` |
+| Data | `col(array, "field")`, `extract_number(string)` |
+| Regression | `linreg(x, y)`, `polyfit(x, y, degree)`, `lstsq(A, b)` |
+
+## Prerequisites
+
+### 1. Install Rust
+
+If you don't have Rust installed, use [rustup](https://rustup.rs/) (the official installer):
+
+```bash
+# Linux / macOS
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+
+# Windows
+# Download and run the installer from https://rustup.rs/
+```
+
+After installation, make sure `cargo` is available:
+
+```bash
+rustc --version
+cargo --version
+```
+
+> **Tip:** If the commands are not found, restart your terminal or run `source $HOME/.cargo/env`.
+
+### 2. Install system dependencies
+
+**Linux (Debian / Ubuntu)**
+
+```bash
+sudo apt-get update
+sudo apt-get install -y libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
+    libxkbcommon-dev libssl-dev libgtk-3-dev
+```
+
+**macOS** – No extra dependencies are needed (Xcode Command Line Tools are sufficient):
+
+```bash
+xcode-select --install
+```
+
+**Windows** – No extra dependencies are needed.
+
+## Building & Running
+
+```bash
+git clone https://github.com/elechou/PlotOxide.git
+cd PlotOxide
+
+# Debug build
+cargo run
+
+# Release build (recommended)
+cargo run --release
+```
+
+The compiled binary will be located at:
+- Debug: `target/debug/plot-oxide`
+- Release: `target/release/plot-oxide`
+
+## How to Use
+
+### Step 1 – Load an image
+
+Open the application and load a plot image:
+- Click **Load Image** in the top toolbar
+- **Paste** from clipboard (`Ctrl+V` / `Cmd+V` or click "Paste Image")
+- Drag and drop an image file onto the window
+
+A sample image (`sample_plot.png`) is included for testing.
+
+### Step 2 – Calibrate the axes
+
+1. Click **Place Calib Points** and click on **4 known reference points** on the image (two along X-axis, two along Y-axis).
+2. Enter the real-world values for each reference point (X₁, X₂, Y₁, Y₂) in the left sidebar.
+3. Enable **Log X** / **Log Y** checkboxes if an axis uses a logarithmic scale.
+
+### Step 3 – Extract data points
+
+1. Switch to **Add Data** mode using the canvas toolbar.
+2. Click on data points in the plot. Extracted coordinates appear in the left sidebar.
+
+### Step 4 – Organize & export
+
+- Use **Groups** to create, rename, and color-code different data series.
+- Drag and drop points between groups.
+- Click **Export CSV** to save all data.
+
+### Step 5 – Analyze with scripts
+
+1. Click **Script IDE** in the top-right corner to open the IDE panel.
+2. Select a template from **Script Templates** or write your own Rhai script.
+3. Click **▶ Run Script** to execute. Results appear in the Output panel; variables appear in the Workspace panel.
+4. Click **ⓘ Help** for the full API reference and syntax guide.
+
+## Keyboard Shortcuts
+
+| Shortcut | Action |
+|---|---|
+| `Ctrl+Z` / `Cmd+Z` | Undo |
+| `Ctrl+Shift+Z` / `Cmd+Shift+Z` | Redo |
+| `Delete` / `Backspace` | Delete selected points |
+| `Arrow keys` | Nudge selected points |
+| `Ctrl+V` / `Cmd+V` | Paste image from clipboard |
+| `Escape` | Cancel current mode |
+| `Shift+Click` | Range select |
+| `Ctrl+Click` / `Cmd+Click` | Toggle individual selection |
+
+## Project Structure
+
+```
+PlotOxide/
+├── src/
+│   ├── main.rs           # Application entry point
+│   ├── core.rs           # Calibration math and coordinate mapping
+│   ├── state.rs          # Application state with undo/redo
+│   ├── action.rs         # Action definitions for state updates
+│   ├── ui/
+│   │   ├── mod.rs        # Main UI layout and modals
+│   │   ├── panel.rs      # Left sidebar (calibration, groups, data)
+│   │   ├── canvas.rs     # Image viewport and interaction
+│   │   └── toolbar.rs    # Mode toolbar (Select, Add, Delete, Pan)
+│   ├── ide/
+│   │   ├── mod.rs        # IDE panel layout
+│   │   ├── editor.rs     # Code editor with syntax highlighting
+│   │   ├── workspace.rs  # Variable inspector panel
+│   │   ├── inspector.rs  # Data table viewer
+│   │   ├── presets.rs    # Script templates and import/export
+│   │   └── help.rs       # Built-in scripting reference
+│   └── script/
+│       ├── mod.rs        # Rhai engine setup and data binding
+│       └── math.rs       # Math and regression functions
+├── example_scripts/       # Built-in script templates (.rhai)
+├── docs/
+│   └── scripting_help.md  # Scripting reference (embedded at build)
+├── build.rs               # Auto-discovers example scripts
+├── Cargo.toml             # Dependencies and build configuration
+├── sample_plot.png        # Example plot image
+└── screen_shoot.png       # Application screenshot
+```
+
+## Adding Custom Script Templates
+
+Drop any `.rhai` file into the `example_scripts/` directory. The build system automatically discovers and embeds them into the **Script Templates** menu. Files are sorted by filename, so use numeric prefixes (e.g. `05_my_analysis.rhai`) to control ordering. The display name is derived from the filename (e.g. `05_my_analysis` → "My Analysis").
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
