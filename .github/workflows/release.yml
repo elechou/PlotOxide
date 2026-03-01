@@ -57,6 +57,10 @@ jobs:
         if: startsWith(matrix.os, 'macos')
         run: cargo bundle --release --target ${{ matrix.target }}
 
+      - name: Ad-hoc code sign (macOS)
+        if: startsWith(matrix.os, 'macos')
+        run: codesign --force --deep -s - target/${{ matrix.target }}/release/bundle/osx/plot-oxide.app
+
       - name: Package (macOS)
         if: startsWith(matrix.os, 'macos')
         # Use `ditto` to correctly zip the .app directory structure preserving permissions.
