@@ -1,5 +1,7 @@
+use crate::ide::editor::EIGHTIES_SETTINGS;
 use crate::state::AppState;
 use eframe::egui;
+use egui_extras::{Column, TableBuilder};
 
 /// The embedded scripting help markdown (compiled into the binary).
 const HELP_MD: &str = include_str!("../../docs/scripting_help.md");
@@ -24,32 +26,36 @@ pub fn draw_help_window(state: &mut AppState, ctx: &egui::Context) {
 }
 
 /// Render a simplified subset of markdown as egui widgets.
-/// Supports: headings (#, ##, ###), code blocks (```), tables, bold (**), `inline code`,
+/// Supports: headings (#, ##, ###), code blocks (``` with syntax highlighting),
+/// tables (rendered as egui_extras::TableBuilder), bold (**), `inline code`,
 /// and plain paragraphs.
 fn render_help_markdown(ui: &mut egui::Ui, md: &str) {
     let mut in_code_block = false;
     let mut code_buf = String::new();
+    let mut code_lang = String::new();
+    let mut table_rows: Vec<Vec<String>> = Vec::new();
+    let mut table_counter: usize = 0;
 
     for line in md.lines() {
         // Code block toggle
         if line.trim_start().starts_with("```") {
+            // Flush any pending table
+            if !table_rows.is_empty() {
+                render_table(ui, &table_rows, table_counter);
+                table_counter += 1;
+                table_rows.clear();
+            }
+
             if in_code_block {
-                // End code block — render accumulated code
-                let frame = egui::Frame::NONE
-                    .fill(egui::Color32::from_rgb(30, 30, 30))
-                    .inner_margin(8.0)
-                    .corner_radius(4.0);
-                frame.show(ui, |ui| {
-                    ui.label(
-                        egui::RichText::new(&code_buf)
-                            .font(egui::FontId::monospace(13.0))
-                            .color(egui::Color32::from_rgb(0xAB, 0xB2, 0xBF)),
-                    );
-                });
-                ui.add_space(4.0);
+                // End code block — render with syntax highlighting
+                render_code_block(ui, &code_buf, &code_lang);
                 code_buf.clear();
+                code_lang.clear();
                 in_code_block = false;
             } else {
+                // Start code block — capture optional language hint
+                let hint = line.trim_start().trim_start_matches('`').trim();
+                code_lang = hint.to_string();
                 in_code_block = true;
             }
             continue;
@@ -65,6 +71,30 @@ fn render_help_markdown(ui: &mut egui::Ui, md: &str) {
 
         let trimmed = line.trim();
 
+        // Table rows: accumulate and defer rendering
+        if trimmed.starts_with('|') {
+            // Skip separator rows like |---|---|
+            if trimmed.contains("---") {
+                continue;
+            }
+            let cells: Vec<String> = trimmed
+                .split('|')
+                .filter(|s| !s.is_empty())
+                .map(|s| s.trim().to_string())
+                .collect();
+            if !cells.is_empty() {
+                table_rows.push(cells);
+            }
+            continue;
+        }
+
+        // If we were accumulating table rows and hit a non-table line, flush them
+        if !table_rows.is_empty() {
+            render_table(ui, &table_rows, table_counter);
+            table_counter += 1;
+            table_rows.clear();
+        }
+
         // Empty line → spacing
         if trimmed.is_empty() {
             ui.add_space(4.0);
@@ -77,7 +107,18 @@ fn render_help_markdown(ui: &mut egui::Ui, md: &str) {
             continue;
         }
 
-        // Headings
+        // Headings (check longest prefix first to avoid ambiguity)
+        if trimmed.starts_with("#### ") {
+            ui.add_space(4.0);
+            ui.label(
+                egui::RichText::new(&trimmed[5..])
+                    .strong()
+                    .size(14.0)
+                    .color(egui::Color32::from_rgb(0xD0, 0xD0, 0xD0)),
+            );
+            ui.add_space(2.0);
+            continue;
+        }
         if trimmed.starts_with("### ") {
             ui.add_space(6.0);
             ui.label(
@@ -112,20 +153,6 @@ fn render_help_markdown(ui: &mut egui::Ui, md: &str) {
             continue;
         }
 
-        // Table rows (simplified: render as monospace)
-        if trimmed.starts_with('|') {
-            // Skip separator rows like |---|---|
-            if trimmed.contains("---") {
-                continue;
-            }
-            ui.label(
-                egui::RichText::new(trimmed)
-                    .font(egui::FontId::monospace(12.0))
-                    .color(egui::Color32::from_rgb(0xCC, 0xCC, 0xCC)),
-            );
-            continue;
-        }
-
         // Blockquote / note
         if trimmed.starts_with("> ") {
             let content = &trimmed[2..];
@@ -134,11 +161,7 @@ fn render_help_markdown(ui: &mut egui::Ui, md: &str) {
                 .inner_margin(6.0)
                 .corner_radius(3.0);
             frame.show(ui, |ui| {
-                ui.label(
-                    egui::RichText::new(content)
-                        .italics()
-                        .color(egui::Color32::from_rgb(0xAA, 0xCC, 0xEE)),
-                );
+                render_inline(ui, content);
             });
             ui.add_space(2.0);
             continue;
@@ -157,13 +180,129 @@ fn render_help_markdown(ui: &mut egui::Ui, md: &str) {
         // Regular paragraph — render with inline formatting
         render_inline(ui, trimmed);
     }
+
+    // Flush any trailing table
+    if !table_rows.is_empty() {
+        render_table(ui, &table_rows, table_counter);
+    }
 }
+
+// ---------------------------------------------------------------------------
+// Code block rendering with syntax highlighting
+// ---------------------------------------------------------------------------
+
+/// Map the markdown language hint to a syntect-compatible extension.
+fn syntect_lang(hint: &str) -> &str {
+    match hint {
+        "rhai" | "rust" | "rs" => "rs",
+        "js" | "javascript" => "js",
+        "py" | "python" => "py",
+        "toml" => "toml",
+        "json" => "json",
+        _ => "rs", // default to Rust-like highlighting (good for Rhai)
+    }
+}
+
+/// Render a fenced code block with syntax highlighting inside a dark frame.
+fn render_code_block(ui: &mut egui::Ui, code: &str, lang_hint: &str) {
+    let frame = egui::Frame::NONE
+        .fill(egui::Color32::from_rgb(30, 30, 30))
+        .inner_margin(8.0)
+        .corner_radius(4.0);
+
+    frame.show(ui, |ui| {
+        let theme = egui_extras::syntax_highlighting::CodeTheme::from_style(ui.style());
+        let ext = syntect_lang(lang_hint);
+        let mut layout_job = egui_extras::syntax_highlighting::highlight_with(
+            ui.ctx(),
+            ui.style(),
+            &theme,
+            code,
+            ext,
+            &EIGHTIES_SETTINGS,
+        );
+        // Prevent wrapping so code lines stay intact
+        layout_job.wrap.max_width = f32::INFINITY;
+        ui.label(layout_job);
+    });
+    ui.add_space(4.0);
+}
+
+// ---------------------------------------------------------------------------
+// Table rendering
+// ---------------------------------------------------------------------------
+
+/// Render accumulated table rows as a proper egui_extras table.
+/// The first row is treated as the header.
+fn render_table(ui: &mut egui::Ui, rows: &[Vec<String>], table_index: usize) {
+    if rows.is_empty() {
+        return;
+    }
+
+    let header = &rows[0];
+    let body_rows = if rows.len() > 1 { &rows[1..] } else { &[] };
+    let num_cols = header.len();
+    if num_cols == 0 {
+        return;
+    }
+
+    ui.add_space(4.0);
+
+    // Wrap in push_id so each table gets a completely unique egui ID scope.
+    ui.push_id(("help_table", table_index), |ui| {
+        let available_width = ui.available_width();
+        let col_width = (available_width / num_cols as f32).max(80.0);
+
+        let mut builder = TableBuilder::new(ui)
+            .striped(true)
+            .vscroll(false)
+            .cell_layout(egui::Layout::left_to_right(egui::Align::Center));
+
+        for i in 0..num_cols {
+            if i == num_cols - 1 {
+                builder = builder.column(Column::remainder().at_least(60.0));
+            } else {
+                builder = builder.column(Column::initial(col_width).at_least(60.0));
+            }
+        }
+
+        builder
+            .header(20.0, |mut hdr| {
+                for cell_text in header {
+                    hdr.col(|ui| {
+                        ui.strong(cell_text);
+                    });
+                }
+            })
+            .body(|body| {
+                body.rows(20.0, body_rows.len(), |mut row| {
+                    let idx = row.index();
+                    let row_data = &body_rows[idx];
+                    for (col_idx, cell_text) in row_data.iter().enumerate() {
+                        if col_idx < num_cols {
+                            row.col(|ui| {
+                                render_inline(ui, cell_text);
+                            });
+                        }
+                    }
+                    // Fill remaining columns if this row has fewer cells
+                    for _ in row_data.len()..num_cols {
+                        row.col(|_ui| {});
+                    }
+                });
+            });
+    }); // ui.push_id
+    ui.add_space(4.0);
+}
+
+// ---------------------------------------------------------------------------
+// Inline formatting
+// ---------------------------------------------------------------------------
 
 /// Render a single line with basic inline formatting:
 /// `code`, **bold**, *italic*
 fn render_inline(ui: &mut egui::Ui, text: &str) {
     // For simplicity, render as a single label with inline code highlighted
-    // A more sophisticated approach would parse and layout each segment
     let mut job = egui::text::LayoutJob::default();
     let default_color = egui::Color32::from_rgb(0xCC, 0xCC, 0xCC);
     let code_color = egui::Color32::from_rgb(0xE0, 0x6C, 0x75);

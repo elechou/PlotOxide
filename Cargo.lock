@@ -2574,7 +2574,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "plot-oxide"
+name = "plot-redox"
 version = "0.1.0"
 dependencies = [
  "clipboard-rs",

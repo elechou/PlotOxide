@@ -1,5 +1,5 @@
 // ============================================================
-//  PlotOxide — Linear Regression (y = k·x) for All Groups
+//  PlotRedox — Linear Regression (y = k·x) for All Groups
 // ============================================================
 //  Fits  y = k·x  (forced through origin) plus a standard
 //  y = a + b·x with intercept for comparison.
@@ -21,6 +21,6 @@ for name in data.keys() {
     let fit = linreg(xs, ys);
 
     print(`[${name}]  ${pts.len()} pts`);
-    print(`  y = ${fit.slope}·x + ${fit.intercept} (with intercept) R² = ${fit.r_squared}`);
-    print("");
+    print(`y = ${fit.slope}·x + ${fit.intercept}`);
+    print(`R² = ${fit.r_squared}`);
 }

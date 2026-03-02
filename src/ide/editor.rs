@@ -4,7 +4,7 @@ use eframe::egui::{self, Color32};
 use std::sync::LazyLock;
 
 /// Custom SyntectSettings that replaces "base16-mocha.dark" with "base16-eighties.dark" colors.
-static EIGHTIES_SETTINGS: LazyLock<egui_extras::syntax_highlighting::SyntectSettings> =
+pub(crate) static EIGHTIES_SETTINGS: LazyLock<egui_extras::syntax_highlighting::SyntectSettings> =
     LazyLock::new(|| {
         let ps = syntect::parsing::SyntaxSet::load_defaults_newlines();
         let mut ts = syntect::highlighting::ThemeSet::load_defaults();

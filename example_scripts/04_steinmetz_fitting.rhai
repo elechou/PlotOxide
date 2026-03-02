@@ -1,5 +1,5 @@
 // ============================================================
-//  PlotOxide — Steinmetz Parameter Fitting
+//  PlotRedox — Steinmetz Parameter Fitting
 // ============================================================
 //  Fits the Steinmetz equation in log₁₀ space:
 //
@@ -7,20 +7,18 @@
 //
 //  Assumptions:
 //    - Each group name contains the frequency, e.g. "20kHz"
-//      (the first number is extracted as f in Hz×1000 for 'k',
+//      (the first number is extracted as f in kHz,
 //       or raw number — adjust the multiplier below).
-//    - Point x-values = B (flux density in mT, converted to T)
-//    - Point y-values = Pv (power loss density)
+//    - Point x-values = B (flux density, in T)
+//    - Point y-values = Pv (power loss density, in kW/m3)
 //
 //  The script collects ALL points from ALL groups, builds the
 //  design matrix, and solves via lstsq (OLS).
 // ============================================================
 
-// Adjust this multiplier if your group-name number is in kHz:
-//   If names are like "20kHz" and the number 20 means 20000 Hz,
-//   set freq_multiplier = 1000.0.
-//   If the number is already in Hz, set to 1.0.
-let freq_multiplier = 1000.0;
+// Adjust this multiplier if your group-name number is in Hz:
+// If the number is in Hz, set freq_multiplier = 1.0e-3.
+let freq_multiplier = 1.0;
 
 // B conversion: mT → T
 let b_scale = 1.0e-3;
@@ -39,12 +37,12 @@ for name in data.keys() {
         print(`[${name}]  ⚠ Could not extract frequency, skipped.`);
         continue;
     }
-    let f_hz = f_val * freq_multiplier;
+    let f_khz = f_val * freq_multiplier;  // Hz → kHz
 
     let pts = data[name];
     if pts.len() == 0 { continue; }
 
-    let lf = log10(f_hz);
+    let lf = log10(f_khz);
     let count = 0;
 
     for pt in pts {
@@ -58,7 +56,7 @@ for name in data.keys() {
             count += 1;
         }
     }
-    print(`[${name}]  f = ${f_hz} Hz,  ${count} valid points`);
+    print(`[${name}]  f = ${f_khz} kHz,  ${count} valid points`);
     total_pts += count;
 }
 
@@ -78,15 +76,16 @@ if total_pts < 3 {
     // ---- Solve: A·x = log10(P) ----
     let result = lstsq(A, all_log_P);
 
-    let log_k = result[0];
+    let log_k  = result[0];
     let alpha  = result[1];
     let beta   = result[2];
     let k      = pow10(log_k);
 
     print("\n─── Results ───");
-    print(`  k     = ${k}`);
-    print(`  alpha = ${alpha}`);
-    print(`  beta  = ${beta}`);
-    print("");
-    print(`  Pv = ${k} · f^${alpha} · B^${beta}`);
+    print("in kW/m3, kHz, mT");
+    print(`k     = ${k}`);
+    print(`alpha = ${alpha}`);
+    print(`beta  = ${beta}`);
+    print("\n");
+    print(`Pv = ${k} · f^${alpha} · B^${beta}`);
 }

@@ -1,5 +1,5 @@
 [package]
-name = "plot-oxide"
+name = "plot-redox"
 version = "0.1.0"
 edition = "2021"
 authors = ["Qiu Shou", "Antigravity"]
@@ -29,5 +29,5 @@ lto = true
 winres = "0.1.12"
 
 [package.metadata.bundle]
-identifier = "com.elechou.plot-oxide"
+identifier = "com.elechou.plot-redox"
 icon = ["assets/icon.icns", "assets/icon.ico", "assets/icon.png"]

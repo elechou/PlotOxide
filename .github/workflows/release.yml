@@ -18,13 +18,13 @@ jobs:
         include:
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            artifact_name: PlotOxide-Windows.zip
+            artifact_name: PlotRedox-Windows.zip
           - os: macos-latest # M1/M2/M3 (arm64)
             target: aarch64-apple-darwin
-            artifact_name: PlotOxide-macOS-arm64.zip
+            artifact_name: PlotRedox-macOS-arm64.zip
           - os: macos-latest # Cross-compile for Intel (x86_64)
             target: x86_64-apple-darwin
-            artifact_name: PlotOxide-macOS-x86_64.zip
+            artifact_name: PlotRedox-macOS-x86_64.zip
 
     steps:
       - name: Checkout repository
@@ -44,7 +44,7 @@ jobs:
 
       - name: Package (Windows)
         if: matrix.os == 'windows-latest'
-        run: Compress-Archive -Path target/${{ matrix.target }}/release/plot-oxide.exe -DestinationPath ${{ matrix.artifact_name }}
+        run: Compress-Archive -Path target/${{ matrix.target }}/release/plot-redox.exe -DestinationPath ${{ matrix.artifact_name }}
 
       # ==================
       # macOS Build
@@ -59,12 +59,12 @@ jobs:
 
       - name: Ad-hoc code sign (macOS)
         if: startsWith(matrix.os, 'macos')
-        run: codesign --force --deep -s - target/${{ matrix.target }}/release/bundle/osx/plot-oxide.app
+        run: codesign --force --deep -s - target/${{ matrix.target }}/release/bundle/osx/plot-redox.app
 
       - name: Package (macOS)
         if: startsWith(matrix.os, 'macos')
         # Use `ditto` to correctly zip the .app directory structure preserving permissions.
-        run: ditto -c -k --sequesterRsrc --keepParent target/${{ matrix.target }}/release/bundle/osx/plot-oxide.app ${{ matrix.artifact_name }}
+        run: ditto -c -k --sequesterRsrc --keepParent target/${{ matrix.target }}/release/bundle/osx/plot-redox.app ${{ matrix.artifact_name }}
 
       # ==================
       # Upload Artifacts

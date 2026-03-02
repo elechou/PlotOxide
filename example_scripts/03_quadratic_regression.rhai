@@ -1,5 +1,5 @@
 // ============================================================
-//  PlotOxide — Quadratic Regression for All Groups
+//  PlotRedox — Quadratic Regression for All Groups
 // ============================================================
 //  Fits  y = a₀ + a₁·x + a₂·x²  to every group and prints
 //  the coefficients plus R² for each.
@@ -25,7 +25,6 @@ for name in data.keys() {
     let a2 = fit.coeffs[2];
 
     print(`[${name}]  ${pts.len()} pts`);
-    print(`  y = ${a0} + ${a1}·x + ${a2}·x²`);
-    print(`  R² = ${fit.r_squared}`);
-    print("");
+    print(`y = ${a0} + ${a1}·x + ${a2}·x²`);
+    print(`R² = ${fit.r_squared}`);
 }

@@ -11,7 +11,7 @@ pub fn draw_ui(state: &mut AppState, ctx: &egui::Context, actions: &mut Vec<Acti
     egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
         ui.add_space(8.0);
         ui.horizontal(|ui| {
-            ui.heading("PlotOxide");
+            ui.heading("PlotRedox");
             ui.add_space(20.0);
 
             let is_dark = ctx.style().visuals.dark_mode;

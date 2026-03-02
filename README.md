@@ -1,8 +1,8 @@
-# PlotOxide
+# PlotRedox
 
 A native, high-performance plot digitizer built with **Rust** and **egui**. Load an image of a chart or plot, calibrate the axes, click on data points, and export the extracted coordinates to CSV — with a built-in **scripting IDE** for on-the-fly data analysis.
 
-![PlotOxide Screenshot](screenshot.png)
+![PlotRedox Screenshot](screenshot.png)
 
 ## Features
 
@@ -80,8 +80,8 @@ xcode-select --install
 ## Building & Running
 
 ```bash
-git clone https://github.com/elechou/PlotOxide.git
-cd PlotOxide
+git clone https://github.com/elechou/PlotRedox.git
+cd PlotRedox
 
 # Debug build
 cargo run
@@ -91,8 +91,8 @@ cargo run --release
 ```
 
 The compiled binary will be located at:
-- Debug: `target/debug/plot-oxide`
-- Release: `target/release/plot-oxide`
+- Debug: `target/debug/plot-redox`
+- Release: `target/release/plot-redox`
 
 ## How to Use
 
@@ -145,7 +145,7 @@ A sample image (`sample_plot.png`) is included for testing.
 ## Project Structure
 
 ```
-PlotOxide/
+PlotRedox/
 ├── src/
 │   ├── main.rs           # Application entry point
 │   ├── core.rs           # Calibration math and coordinate mapping
