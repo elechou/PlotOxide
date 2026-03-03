@@ -17,11 +17,9 @@
 // ============================================================
 
 // Adjust this multiplier if your group-name number is in Hz:
-// If the number is in Hz, set freq_multiplier = 1.0e-3.
-let freq_multiplier = 1.0;
-
-// B conversion: mT → T
-let b_scale = 1.0e-3;
+let freq_multiplier = 1.0;  //kHz: 1.0,    Hz: 1.0e-3;
+let b_multiplier = 1.0e-3;  //mT: 1.0e-3,  T: 1.0;
+let power_multiplier = 1.0; //kW/m3: 1.0,  W/m3: 1.0e-3;
 
 print("=== Steinmetz Parameter Fitting (OLS in log₁₀ space) ===\n");
 
@@ -37,7 +35,7 @@ for name in data.keys() {
         print(`[${name}]  ⚠ Could not extract frequency, skipped.`);
         continue;
     }
-    let f_khz = f_val * freq_multiplier;  // Hz → kHz
+    let f_khz = f_val * freq_multiplier;
 
     let pts = data[name];
     if pts.len() == 0 { continue; }
@@ -46,8 +44,8 @@ for name in data.keys() {
     let count = 0;
 
     for pt in pts {
-        let b_val = pt.x * b_scale;   // mT → T
-        let p_val = pt.y;
+        let b_val = pt.x * b_multiplier;
+        let p_val = pt.y * power_multiplier;
 
         if b_val > 0.0 && p_val > 0.0 {
             all_log_f.push(lf);

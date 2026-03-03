@@ -83,22 +83,6 @@ cargo run --release
 
 The compiled binary will be located at `target/release/plot-redox` (or `.exe` on Windows).
 
-## Customizing Built-in Scripts
-
-PlotRedox features a powerful **auto-discovery system** for script templates. You are not limited to the presets provided in the repository; you can easily add your own permanent code snippets to the IDE.
-
-### How it Works
-The build system (`build.rs`) automatically scans the `example_scripts/` directory during compilation and embeds every `.rhai` file it finds directly into the application's binary. This means your personal analysis scripts will appear in the **Script Templates** menu just like the built-in ones.
-
-### Adding Your Own Scripts
-1.  Navigate to the `example_scripts/` folder in the root of the repo.
-2.  Create a new `.rhai` file (e.g., `my_custom_filter.rhai`).
-3.  **Re-compile** the application using `cargo run --release`.
-
-#### Tips for Organization
-- **Menu Order**: Files are sorted alphabetically. Use numeric prefixes like `01_load_data.rhai`, `02_clean_data.rhai` to control the exact order in the dropdown menu.
-- **Display Names**: The system automatically "prettifies" filenames for the UI. For example, `03_advanced_log_fit.rhai` will be displayed as **"Advanced Log Fit"** in the IDE.
-
 ## How to Use
 
 ### Step 1 – Load an image
@@ -146,6 +130,22 @@ A sample image (`sample_plot.png`) is included for testing.
 | `Escape` | Cancel current mode |
 | `Shift+Click` | Range select |
 | `Ctrl+Click` / `Cmd+Click` | Toggle individual selection |
+
+## Customizing Built-in Scripts
+
+PlotRedox features a powerful **auto-discovery system** for script templates. You are not limited to the presets provided in the repository; you can easily add your own permanent code snippets to the IDE.
+
+### How it Works
+The build system (`build.rs`) automatically scans the `example_scripts/` directory during compilation and embeds every `.rhai` file it finds directly into the application's binary. This means your personal analysis scripts will appear in the **Script Templates** menu just like the built-in ones.
+
+### Adding Your Own Scripts
+1.  Navigate to the `example_scripts/` folder in the root of the repo.
+2.  Create a new `.rhai` file (e.g., `my_custom_filter.rhai`).
+3.  **Re-compile** the application using `cargo run --release`.
+
+#### Tips for Organization
+- **Menu Order**: Files are sorted alphabetically. Use numeric prefixes like `01_load_data.rhai`, `02_clean_data.rhai` to control the exact order in the dropdown menu.
+- **Display Names**: The system automatically "prettifies" filenames for the UI. For example, `03_advanced_log_fit.rhai` will be displayed as **"Advanced Log Fit"** in the IDE.
 
 ## Project Structure
 

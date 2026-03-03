@@ -15,7 +15,7 @@ pub fn draw_help_window(state: &mut AppState, ctx: &egui::Context) {
     let mut open = state.ide.show_help;
     egui::Window::new("Scripting Reference")
         .open(&mut open)
-        .default_width(600.0)
+        .default_width(850.0)
         .default_height(500.0)
         .vscroll(true)
         .resizable(true)
@@ -110,45 +110,25 @@ fn render_help_markdown(ui: &mut egui::Ui, md: &str) {
         // Headings (check longest prefix first to avoid ambiguity)
         if trimmed.starts_with("#### ") {
             ui.add_space(4.0);
-            ui.label(
-                egui::RichText::new(&trimmed[5..])
-                    .strong()
-                    .size(14.0)
-                    .color(egui::Color32::from_rgb(0xD0, 0xD0, 0xD0)),
-            );
+            ui.label(egui::RichText::new(&trimmed[5..]).strong().size(14.0));
             ui.add_space(2.0);
             continue;
         }
         if trimmed.starts_with("### ") {
             ui.add_space(6.0);
-            ui.label(
-                egui::RichText::new(&trimmed[4..])
-                    .strong()
-                    .size(15.0)
-                    .color(egui::Color32::from_rgb(0xE0, 0xE0, 0xE0)),
-            );
+            ui.label(egui::RichText::new(&trimmed[4..]).strong().size(15.0));
             ui.add_space(2.0);
             continue;
         }
         if trimmed.starts_with("## ") {
             ui.add_space(8.0);
-            ui.label(
-                egui::RichText::new(&trimmed[3..])
-                    .strong()
-                    .size(17.0)
-                    .color(egui::Color32::WHITE),
-            );
+            ui.label(egui::RichText::new(&trimmed[3..]).strong().size(17.0));
             ui.add_space(3.0);
             continue;
         }
         if trimmed.starts_with("# ") {
             ui.add_space(10.0);
-            ui.label(
-                egui::RichText::new(&trimmed[2..])
-                    .strong()
-                    .size(20.0)
-                    .color(egui::Color32::WHITE),
-            );
+            ui.label(egui::RichText::new(&trimmed[2..]).strong().size(20.0));
             ui.add_space(4.0);
             continue;
         }
@@ -156,8 +136,9 @@ fn render_help_markdown(ui: &mut egui::Ui, md: &str) {
         // Blockquote / note
         if trimmed.starts_with("> ") {
             let content = &trimmed[2..];
+            let bg_color = ui.visuals().faint_bg_color;
             let frame = egui::Frame::NONE
-                .fill(egui::Color32::from_rgb(40, 50, 60))
+                .fill(bg_color)
                 .inner_margin(6.0)
                 .corner_radius(3.0);
             frame.show(ui, |ui| {
@@ -205,13 +186,19 @@ fn syntect_lang(hint: &str) -> &str {
 
 /// Render a fenced code block with syntax highlighting inside a dark frame.
 fn render_code_block(ui: &mut egui::Ui, code: &str, lang_hint: &str) {
+    let theme = egui_extras::syntax_highlighting::CodeTheme::from_style(ui.style());
+    let code_bg = if theme.is_dark() {
+        egui::Color32::from_rgb(20, 20, 20)
+    } else {
+        egui::Color32::from_rgb(240, 240, 240)
+    };
+
     let frame = egui::Frame::NONE
-        .fill(egui::Color32::from_rgb(30, 30, 30))
+        .fill(code_bg)
         .inner_margin(8.0)
         .corner_radius(4.0);
 
     frame.show(ui, |ui| {
-        let theme = egui_extras::syntax_highlighting::CodeTheme::from_style(ui.style());
         let ext = syntect_lang(lang_hint);
         let mut layout_job = egui_extras::syntax_highlighting::highlight_with(
             ui.ctx(),
@@ -304,10 +291,8 @@ fn render_table(ui: &mut egui::Ui, rows: &[Vec<String>], table_index: usize) {
 fn render_inline(ui: &mut egui::Ui, text: &str) {
     // For simplicity, render as a single label with inline code highlighted
     let mut job = egui::text::LayoutJob::default();
-    let default_color = egui::Color32::from_rgb(0xCC, 0xCC, 0xCC);
     let code_color = egui::Color32::from_rgb(0xE0, 0x6C, 0x75);
-    let code_bg = egui::Color32::from_rgb(45, 45, 45);
-    let bold_color = egui::Color32::from_rgb(0xEE, 0xEE, 0xEE);
+    let code_bg = ui.visuals().extreme_bg_color;
 
     let chars: Vec<char> = text.chars().collect();
     let mut i = 0;
@@ -322,7 +307,6 @@ fn render_inline(ui: &mut egui::Ui, text: &str) {
                     &segment,
                     0.0,
                     egui::TextFormat {
-                        color: default_color,
                         ..Default::default()
                     },
                 );
@@ -357,7 +341,6 @@ fn render_inline(ui: &mut egui::Ui, text: &str) {
                     &segment,
                     0.0,
                     egui::TextFormat {
-                        color: default_color,
                         ..Default::default()
                     },
                 );
@@ -376,7 +359,6 @@ fn render_inline(ui: &mut egui::Ui, text: &str) {
                 &bold_text,
                 0.0,
                 egui::TextFormat {
-                    color: bold_color,
                     font_id: egui::FontId::proportional(14.0),
                     ..Default::default()
                 },
@@ -394,7 +376,6 @@ fn render_inline(ui: &mut egui::Ui, text: &str) {
             &segment,
             0.0,
             egui::TextFormat {
-                color: default_color,
                 ..Default::default()
             },
         );
