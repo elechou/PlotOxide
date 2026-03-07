@@ -2,6 +2,8 @@
 
 A native, high-performance plot digitizer built with **Rust** and **egui**. Load an image of a chart or plot, calibrate the axes, click on data points, and export the extracted coordinates to CSV — with a built-in **scripting IDE** for on-the-fly data analysis.
 
+An open source alternative to GetData Graph Digitizer, WebPlotDigitizer, PlotDigitizer.
+
 ![PlotRedox Screenshot](screenshot.png)
 
 ## Features

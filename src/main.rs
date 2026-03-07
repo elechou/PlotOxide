@@ -53,8 +53,16 @@ impl eframe::App for PlotRedoxApp {
             match action {
                 crate::action::Action::SaveProject => {
                     if let Some(path) = self.state.project_path.clone() {
-                        project::save_project_to_path(&self.state, &path);
-                        self.state.dirty = false;
+                        if path.exists() {
+                            project::save_project_to_path(&self.state, &path);
+                            self.state.dirty = false;
+                        } else {
+                            // File was moved or deleted, fall back to Save As
+                            if let Some(new_path) = project::save_project_as(&self.state) {
+                                self.state.project_path = Some(new_path);
+                                self.state.dirty = false;
+                            }
+                        }
                     } else {
                         if let Some(path) = project::save_project_as(&self.state) {
                             self.state.project_path = Some(path);
