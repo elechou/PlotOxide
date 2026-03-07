@@ -46,6 +46,13 @@ pub enum Action {
     // Global App Commands
     SetMode(crate::state::AppMode),
     LoadImage(PathBuf, eframe::egui::TextureHandle, eframe::egui::Vec2),
+    LoadClipboardImage(
+        eframe::egui::TextureHandle,
+        eframe::egui::Vec2,
+        Vec<u8>,
+        u32,
+        u32,
+    ),
     SetPendingImage(PathBuf, eframe::egui::TextureHandle, eframe::egui::Vec2),
     CancelPendingImage,
     Undo,

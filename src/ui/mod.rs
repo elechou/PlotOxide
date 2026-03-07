@@ -409,6 +409,11 @@ fn execute_pending_action(
                 actions.push(Action::RequestCenter);
                 actions.push(Action::SetMode(crate::state::AppMode::AddCalib));
             }
+            PendingAction::LoadClipboardImage(tex, size, bytes, w, h) => {
+                actions.push(Action::LoadClipboardImage(tex, size, bytes, w, h));
+                actions.push(Action::RequestCenter);
+                actions.push(Action::SetMode(crate::state::AppMode::AddCalib));
+            }
             PendingAction::OpenProject(data, img_bytes, path) => {
                 crate::project::apply_project(state, data, &img_bytes, path.clone(), ctx);
                 state.project_path = Some(path);
@@ -439,31 +444,17 @@ fn paste_clipboard_image(
                     .expect("Failed to convert clipboard image to RGBA");
                 let bytes = rgba.into_raw();
 
-                // Encode to PNG and cache for project save
-                let mut png_buf = Vec::new();
-                {
-                    let encoder = image::codecs::png::PngEncoder::new(&mut png_buf);
-                    use image::ImageEncoder;
-                    let _ =
-                        encoder.write_image(&bytes, w as u32, h as u32, image::ColorType::Rgba8);
-                }
-                state.raw_image_bytes = Some(png_buf);
-
                 let color_image = egui::ColorImage::from_rgba_unmultiplied(size, &bytes);
                 let handle = ctx.load_texture("clipboard_image", color_image, Default::default());
                 let img_size = eframe::egui::Vec2::new(size[0] as f32, size[1] as f32);
 
                 if state.dirty {
-                    state.pending_action = Some(crate::state::PendingAction::LoadImage(
-                        std::path::PathBuf::from("Clipboard"),
-                        handle,
-                        img_size,
+                    state.pending_action = Some(crate::state::PendingAction::LoadClipboardImage(
+                        handle, img_size, bytes, w as u32, h as u32,
                     ));
                 } else {
-                    actions.push(Action::LoadImage(
-                        std::path::PathBuf::from("Clipboard"),
-                        handle,
-                        img_size,
+                    actions.push(Action::LoadClipboardImage(
+                        handle, img_size, bytes, w as u32, h as u32,
                     ));
                     actions.push(Action::RequestCenter);
                     actions.push(Action::SetMode(crate::state::AppMode::AddCalib));

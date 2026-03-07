@@ -45,6 +45,16 @@ fn collect_image_bytes(state: &AppState) -> Option<Vec<u8>> {
     if let Some(bytes) = &state.raw_image_bytes {
         return Some(bytes.clone());
     }
+    // Encode clipboard image lazily
+    if let Some((rgba_bytes, w, h)) = &state.clipboard_rgba {
+        let mut png_buf = Vec::new();
+        {
+            let encoder = image::codecs::png::PngEncoder::new(&mut png_buf);
+            use image::ImageEncoder;
+            let _ = encoder.write_image(rgba_bytes, *w, *h, image::ColorType::Rgba8);
+        }
+        return Some(png_buf);
+    }
     // Fallback: try re-reading from the original file path
     if let Some(path) = &state.image_path {
         if path.to_string_lossy() != "Clipboard" {

@@ -74,6 +74,13 @@ pub enum PendingAction {
         eframe::egui::TextureHandle,
         eframe::egui::Vec2,
     ),
+    LoadClipboardImage(
+        eframe::egui::TextureHandle,
+        eframe::egui::Vec2,
+        Vec<u8>,
+        u32,
+        u32,
+    ),
     OpenProject(crate::state::ProjectData, Vec<u8>, std::path::PathBuf),
     CloseApp,
 }
@@ -86,6 +93,7 @@ pub struct AppState {
     pub texture: Option<TextureHandle>,
     pub img_size: Vec2,
     pub raw_image_bytes: Option<Vec<u8>>,
+    pub clipboard_rgba: Option<(Vec<u8>, u32, u32)>, // For lazily encoding pasted images
     pub pending_image: Option<(PathBuf, TextureHandle, Vec2)>,
 
     // Viewport transform (Panning & Zooming)
@@ -164,6 +172,7 @@ impl Default for AppState {
             texture: None,
             img_size: Vec2::ZERO,
             raw_image_bytes: None,
+            clipboard_rgba: None,
             pending_image: None,
             pan: Vec2::ZERO,
             zoom: 1.0,
@@ -731,6 +740,15 @@ impl AppState {
 
                 // We preserve IDE open status if desired, or just reset it. The user wants a clean slate.
                 // "ide 的workspace 跟 code都没有清空"
+
+                *self = new_state;
+            }
+            Action::LoadClipboardImage(tex, size, bytes, w, h) => {
+                let mut new_state = AppState::default();
+                new_state.clipboard_rgba = Some((bytes, w, h));
+                new_state.image_path = Some(std::path::PathBuf::from("Clipboard"));
+                new_state.texture = Some(tex);
+                new_state.img_size = size;
 
                 *self = new_state;
             }
