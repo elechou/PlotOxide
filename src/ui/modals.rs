@@ -84,7 +84,6 @@ pub fn draw(state: &mut AppState, ctx: &egui::Context, actions: &mut Vec<Action>
                         if ui.add(confirm_btn).clicked() {
                             actions.push(Action::LoadImage(path.clone(), tex.clone(), *size));
                             actions.push(Action::RequestCenter);
-                            actions.push(Action::SetMode(crate::state::AppMode::AddCalib));
                         }
                     },
                 );
@@ -96,7 +95,6 @@ pub fn draw(state: &mut AppState, ctx: &egui::Context, actions: &mut Vec<Action>
             // Workspace is empty, load directly without warning
             actions.push(Action::LoadImage(path.clone(), tex.clone(), *size));
             actions.push(Action::RequestCenter);
-            actions.push(Action::SetMode(crate::state::AppMode::AddCalib));
         }
     }
 
@@ -206,12 +204,10 @@ fn execute_pending_action(
             PendingAction::LoadImage(path, tex, size) => {
                 actions.push(Action::LoadImage(path, tex, size));
                 actions.push(Action::RequestCenter);
-                actions.push(Action::SetMode(crate::state::AppMode::AddCalib));
             }
             PendingAction::LoadClipboardImage(tex, size, bytes, w, h) => {
                 actions.push(Action::LoadClipboardImage(tex, size, bytes, w, h));
                 actions.push(Action::RequestCenter);
-                actions.push(Action::SetMode(crate::state::AppMode::AddCalib));
             }
             PendingAction::OpenProject(data, img_bytes, path) => {
                 crate::project::apply_project(state, data, &img_bytes, path.clone(), ctx);

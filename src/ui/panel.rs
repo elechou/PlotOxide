@@ -536,7 +536,6 @@ pub fn process_image_file(
                 Vec2::new(size[0] as f32, size[1] as f32),
             ));
             actions.push(Action::RequestCenter);
-            actions.push(Action::SetMode(crate::state::AppMode::AddCalib));
         }
     }
 }

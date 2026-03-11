@@ -457,6 +457,11 @@ pub fn handle(state: &mut AppState, action: Action) {
             state.active_group_idx = new_idx;
         }
         Action::SetMode(mode) => {
+            if state.mode == AppMode::Mask && mode != AppMode::Mask {
+                state.mask.active = false;
+            } else if mode == AppMode::Mask {
+                state.mask.active = true;
+            }
             state.mode = mode;
         }
         Action::LoadImage(path, tex, size) => {

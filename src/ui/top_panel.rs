@@ -141,7 +141,6 @@ pub fn paste_clipboard_image(
                         handle, img_size, bytes, w as u32, h as u32,
                     ));
                     actions.push(Action::RequestCenter);
-                    actions.push(Action::SetMode(crate::state::AppMode::AddCalib));
                 }
                 found = true;
             }
