@@ -21,7 +21,10 @@ pub fn detect_background_color(rgba: &[u8], w: u32, h: u32) -> [u8; 3] {
         *histogram.entry((r, g, b)).or_insert(0) += 1;
     }
 
-    let (best_q, _) = histogram.iter().max_by_key(|&(_, &c)| c).unwrap_or((&(7, 7, 7), &0));
+    let (best_q, _) = histogram
+        .iter()
+        .max_by_key(|&(_, &c)| c)
+        .unwrap_or((&(7, 7, 7), &0));
 
     [
         (best_q.0 << 5) | 0x10,
@@ -50,81 +53,6 @@ fn _is_similar_with_tolerance(a: [u8; 3], b: [u8; 3], tolerance: f32) -> bool {
 }
 
 // ────────────────────────────────────────────────────────────────
-//  Flood-Fill Connectivity Filter
-// ────────────────────────────────────────────────────────────────
-
-/// Filter axis-colored pixels to only those 8-connected to the main axis line,
-/// within a maximum perpendicular distance. This removes text labels and other
-/// disconnected features that share the axis color — even if they are connected
-/// to the axis via tick marks (since text sits beyond `max_distance`).
-///
-/// - `axis_pixels`: all pixels matching the axis color
-/// - `axis_line`: the row (for X-axis) or column (for Y-axis) of the detected axis line
-/// - `is_horizontal`: true for X-axis (seed by row), false for Y-axis (seed by column)
-/// - `line_thickness`: ±tolerance for "on the axis line" seed (typically 2)
-/// - `max_distance`: maximum perpendicular distance from axis line to include
-fn flood_fill_connected_to_axis(
-    axis_pixels: &[(u32, u32)],
-    axis_line: u32,
-    is_horizontal: bool,
-    line_thickness: u32,
-    max_distance: u32,
-) -> Vec<(u32, u32)> {
-    // Build a set of all axis-colored pixel positions for O(1) lookup
-    let pixel_set: HashSet<(u32, u32)> = axis_pixels.iter().copied().collect();
-
-    // Seed: all axis-colored pixels that lie on/near the axis line
-    let mut visited: HashSet<(u32, u32)> = HashSet::new();
-    let mut queue: VecDeque<(u32, u32)> = VecDeque::new();
-
-    for &(x, y) in axis_pixels {
-        let on_axis = if is_horizontal {
-            (y as i32 - axis_line as i32).unsigned_abs() <= line_thickness
-        } else {
-            (x as i32 - axis_line as i32).unsigned_abs() <= line_thickness
-        };
-        if on_axis && visited.insert((x, y)) {
-            queue.push_back((x, y));
-        }
-    }
-
-    // BFS: expand 8-directionally within the axis-colored pixel set,
-    // but ONLY to pixels within max_distance of the axis line.
-    // This prevents the fill from walking through tick marks into text labels.
-    while let Some((cx, cy)) = queue.pop_front() {
-        for dy in -1i32..=1 {
-            for dx in -1i32..=1 {
-                if dx == 0 && dy == 0 {
-                    continue;
-                }
-                let nx = cx as i32 + dx;
-                let ny = cy as i32 + dy;
-                if nx < 0 || ny < 0 {
-                    continue;
-                }
-                let np = (nx as u32, ny as u32);
-
-                // Enforce max perpendicular distance from the axis line
-                let perp_dist = if is_horizontal {
-                    (ny - axis_line as i32).unsigned_abs()
-                } else {
-                    (nx - axis_line as i32).unsigned_abs()
-                };
-                if perp_dist > max_distance {
-                    continue;
-                }
-
-                if pixel_set.contains(&np) && visited.insert(np) {
-                    queue.push_back(np);
-                }
-            }
-        }
-    }
-
-    visited.into_iter().collect()
-}
-
-// ────────────────────────────────────────────────────────────────
 //  Axis Detection (Improved)
 // ────────────────────────────────────────────────────────────────
 
@@ -138,235 +66,363 @@ pub fn analyze_mask_for_axes(
     let w_us = w as usize;
     let h_us = h as usize;
 
-    // Step 1: Find the most common non-background color in masked region
-    let mut color_counts: HashMap<(u8, u8, u8), u32> = HashMap::new();
+    // Step 1: Collect ALL non-background pixels inside the mask.
+    // We trust the user's mask entirely. Any non-bg color is a valid candidate for the axis/ticks.
+    // Our BFS approach will later guarantee we only extract the structure actually attached to the main axis line.
+    let mut pixel_set: HashSet<(u32, u32)> = HashSet::new();
 
     for y in 0..h_us {
         for x in 0..w_us {
             let idx = y * w_us + x;
-            if !mask[idx] { continue; }
-            let off = idx * 4;
-            if off + 2 >= rgba.len() { continue; }
-            let pixel = [rgba[off], rgba[off + 1], rgba[off + 2]];
-            if is_bg_color(pixel, bg_color) { continue; }
-            let qr = pixel[0] >> 6;
-            let qg = pixel[1] >> 6;
-            let qb = pixel[2] >> 6;
-            *color_counts.entry((qr, qg, qb)).or_insert(0) += 1;
-        }
-    }
-
-    let axis_color_q = color_counts
-        .iter()
-        .max_by_key(|&(_, &c)| c)
-        .map(|(&k, _)| k);
-
-    if axis_color_q.is_none() {
-        return AxisDetectionResult {
-            x_axis: None, y_axis: None,
-            x_axis_pixels: Vec::new(), y_axis_pixels: Vec::new(),
-            x_ticks: Vec::new(), y_ticks: Vec::new(),
-        };
-    }
-
-    let axis_q = axis_color_q.unwrap();
-
-    // Step 2: Collect all axis-colored pixels
-    let mut axis_pixels: Vec<(u32, u32)> = Vec::new();
-    for y in 0..h_us {
-        for x in 0..w_us {
-            let idx = y * w_us + x;
-            if !mask[idx] { continue; }
-            let off = idx * 4;
-            if off + 2 >= rgba.len() { continue; }
-            let pixel = [rgba[off], rgba[off + 1], rgba[off + 2]];
-            if is_bg_color(pixel, bg_color) { continue; }
-            let qr = pixel[0] >> 6;
-            let qg = pixel[1] >> 6;
-            let qb = pixel[2] >> 6;
-            if (qr, qg, qb) == axis_q {
-                axis_pixels.push((x as u32, y as u32));
+            if mask[idx] {
+                let off = idx * 4;
+                if off + 2 < rgba.len() {
+                    let pixel = [rgba[off], rgba[off + 1], rgba[off + 2]];
+                    if !is_bg_color(pixel, bg_color) {
+                        pixel_set.insert((x as u32, y as u32));
+                    }
+                }
             }
         }
     }
 
-    if axis_pixels.is_empty() {
+    if pixel_set.is_empty() {
         return AxisDetectionResult {
-            x_axis: None, y_axis: None,
-            x_axis_pixels: Vec::new(), y_axis_pixels: Vec::new(),
-            x_ticks: Vec::new(), y_ticks: Vec::new(),
+            x_axis: None,
+            y_axis: None,
+            x_axis_pixels: Vec::new(),
+            y_axis_pixels: Vec::new(),
+            x_ticks: Vec::new(),
+            y_ticks: Vec::new(),
         };
     }
 
-    // Step 3: Find the densest single row → actual X-axis line
-    let mut row_pixel_counts: HashMap<u32, u32> = HashMap::new();
-    let mut col_pixel_counts: HashMap<u32, u32> = HashMap::new();
-    let mut row_xs: HashMap<u32, Vec<u32>> = HashMap::new();
-    let mut col_ys: HashMap<u32, Vec<u32>> = HashMap::new();
+    // Step 2: Extract Connected Components (Mask Strokes)
+    let mut unvisited: HashSet<(u32, u32)> = pixel_set.iter().copied().collect();
+    let mut islands: Vec<HashSet<(u32, u32)>> = Vec::new();
 
-    for &(x, y) in &axis_pixels {
-        *row_pixel_counts.entry(y).or_insert(0) += 1;
-        *col_pixel_counts.entry(x).or_insert(0) += 1;
-        row_xs.entry(y).or_default().push(x);
-        col_ys.entry(x).or_default().push(y);
+    while let Some(&start) = unvisited.iter().next() {
+        let mut island = HashSet::new();
+        let mut queue = std::collections::VecDeque::new();
+        queue.push_back(start);
+        unvisited.remove(&start);
+        island.insert(start);
+
+        while let Some(curr) = queue.pop_front() {
+            for dy in -1i32..=1 {
+                for dx in -1i32..=1 {
+                    if dx == 0 && dy == 0 {
+                        continue;
+                    }
+                    let nx = curr.0 as i32 + dx;
+                    let ny = curr.1 as i32 + dy;
+                    if nx < 0 || ny < 0 {
+                        continue;
+                    }
+                    let np = (nx as u32, ny as u32);
+                    if unvisited.remove(&np) {
+                        island.insert(np);
+                        queue.push_back(np);
+                    }
+                }
+            }
+        }
+        islands.push(island);
     }
 
-    // Find the row with the most pixels → this IS the axis line
-    let x_axis_row = row_pixel_counts.iter()
-        .filter(|&(_, &count)| count >= 10)
+    // Step 3: Classify each island using 1D Projection Density
+    let min_dim = (w.min(h)) as f32;
+    // Dynamic thresholds: a valid axis stroke must have a 1D density
+    // spanning at least 3% of the image, or a minimum of 20 pixels.
+    let l_min = (min_dim * 0.03).max(20.0) as u32;
+    // Overlap margin for splitting L-shapes
+    let split_margin = (min_dim * 0.02).max(10.0) as u32;
+
+    let mut x_pixel_set: HashSet<(u32, u32)> = HashSet::new();
+    let mut y_pixel_set: HashSet<(u32, u32)> = HashSet::new();
+
+    for island in islands {
+        let mut row_counts: HashMap<u32, u32> = HashMap::new();
+        let mut col_counts: HashMap<u32, u32> = HashMap::new();
+
+        for &(px, py) in &island {
+            *row_counts.entry(py).or_insert(0) += 1;
+            *col_counts.entry(px).or_insert(0) += 1;
+        }
+
+        // 3-pixel window moving density (H_score)
+        let mut max_h = 0;
+        let mut ay = 0;
+        for &y in row_counts.keys() {
+            let density = row_counts.get(&(y.saturating_sub(1))).unwrap_or(&0)
+                + row_counts.get(&y).unwrap_or(&0)
+                + row_counts.get(&(y + 1)).unwrap_or(&0);
+            if density > max_h {
+                max_h = density;
+                ay = y;
+            }
+        }
+
+        // 3-pixel window moving density (V_score)
+        let mut max_v = 0;
+        let mut ax = 0;
+        for &x in col_counts.keys() {
+            let density = col_counts.get(&(x.saturating_sub(1))).unwrap_or(&0)
+                + col_counts.get(&x).unwrap_or(&0)
+                + col_counts.get(&(x + 1)).unwrap_or(&0);
+            if density > max_v {
+                max_v = density;
+                ax = x;
+            }
+        }
+
+        // Routing Logic
+        if max_h < l_min && max_v < l_min {
+            // NOISE (Arabic Numerals, dots, small wiggles) -> DISCARD!
+            continue;
+        } else if max_h >= l_min && max_v < l_min {
+            // PURE X-AXIS
+            x_pixel_set.extend(island);
+        } else if max_v >= l_min && max_h < l_min {
+            // PURE Y-AXIS
+            y_pixel_set.extend(island);
+        } else {
+            // L-SHAPE / CROSS -> Split geometrically around the dense crosshairs
+            for &(px, py) in &island {
+                let dist_x = (py as i32 - ay as i32).abs() as u32;
+                let dist_y = (px as i32 - ax as i32).abs() as u32;
+
+                if dist_x <= dist_y + split_margin {
+                    x_pixel_set.insert((px, py));
+                }
+                if dist_y <= dist_x + split_margin {
+                    y_pixel_set.insert((px, py));
+                }
+            }
+        }
+    }
+
+    // Determine absolute Densest Line separately for purified X and Y pools
+    let mut x_row_counts: HashMap<u32, u32> = HashMap::new();
+    for &(_, py) in &x_pixel_set {
+        *x_row_counts.entry(py).or_insert(0) += 1;
+    }
+    let x_axis_row = x_row_counts
+        .iter()
         .max_by_key(|&(_, &count)| count)
         .map(|(&y, _)| y);
 
-    let y_axis_col = col_pixel_counts.iter()
-        .filter(|&(_, &count)| count >= 10)
+    let mut y_col_counts: HashMap<u32, u32> = HashMap::new();
+    for &(px, _) in &y_pixel_set {
+        *y_col_counts.entry(px).or_insert(0) += 1;
+    }
+    let y_axis_col = y_col_counts
+        .iter()
         .max_by_key(|&(_, &count)| count)
         .map(|(&x, _)| x);
 
-    // Step 4: Detect ticks — short perpendicular segments extending from the axis
-    //         Use flood-fill connectivity to exclude disconnected text labels.
+    // Helper closure: 2D BFS Island + 1D Silhouette Profiling
+    // Note: It now operates strictly on the active_set provided.
+    let extract_axis_and_ticks = |axis_line: u32,
+                                  is_horizontal: bool,
+                                  active_set: &HashSet<(u32, u32)>|
+     -> (Vec<(u32, u32)>, Vec<(f32, f32)>) {
+        // 1. Break active_set into strictly connected components
+        let mut unvisited: HashSet<(u32, u32)> = active_set.iter().copied().collect();
+        let mut best_island: HashSet<(u32, u32)> = HashSet::new();
+        let mut max_span = 0;
+
+        while let Some(&start) = unvisited.iter().next() {
+            let mut island = HashSet::new();
+            let mut queue = std::collections::VecDeque::new();
+            queue.push_back(start);
+            unvisited.remove(&start);
+            island.insert(start);
+
+            let mut min_pos = u32::MAX;
+            let mut max_pos = 0;
+            let mut touches_axis = false;
+
+            while let Some(curr) = queue.pop_front() {
+                let (px, py) = curr;
+                if is_horizontal {
+                    if (py as i32 - axis_line as i32).abs() <= 1 {
+                        touches_axis = true;
+                    }
+                    min_pos = min_pos.min(px);
+                    max_pos = max_pos.max(px);
+                } else {
+                    if (px as i32 - axis_line as i32).abs() <= 1 {
+                        touches_axis = true;
+                    }
+                    min_pos = min_pos.min(py);
+                    max_pos = max_pos.max(py);
+                }
+
+                for dy in -1i32..=1 {
+                    for dx in -1i32..=1 {
+                        if dx == 0 && dy == 0 {
+                            continue;
+                        }
+                        let nx = curr.0 as i32 + dx;
+                        let ny = curr.1 as i32 + dy;
+                        if nx < 0 || ny < 0 {
+                            continue;
+                        }
+                        let np = (nx as u32, ny as u32);
+                        if unvisited.remove(&np) {
+                            island.insert(np);
+                            queue.push_back(np);
+                        }
+                    }
+                }
+            }
+
+            if touches_axis {
+                let span = max_pos.saturating_sub(min_pos);
+                // Use span >= max_span so even a span of 0 (a single pixel on the axis) is captured
+                if span >= max_span {
+                    max_span = span;
+                    best_island = island;
+                }
+            }
+        }
+
+        let island = best_island;
+        if island.is_empty() {
+            return (Vec::new(), Vec::new());
+        }
+
+
+        // 2. 1D Silhouette Profiling
+        // Group by position along the axis
+        let mut profile: HashMap<u32, u32> = HashMap::new(); // along -> max perp extension
+        let mut extent_bounds: HashMap<u32, (u32, u32)> = HashMap::new(); // along -> (min_perp, max_perp)
+
+        for &(px, py) in &island {
+            let (along, perp) = if is_horizontal { (px, py) } else { (py, px) };
+            let ext = (perp as i32 - axis_line as i32).abs() as u32;
+
+            profile
+                .entry(along)
+                .and_modify(|e| *e = (*e).max(ext))
+                .or_insert(ext);
+
+            let entry = extent_bounds.entry(along).or_insert((perp, perp));
+            entry.0 = entry.0.min(perp);
+            entry.1 = entry.1.max(perp);
+        }
+
+        // 3. Measure axis length to auto-scale thresholds
+        let min_along = profile.keys().min().copied().unwrap_or(0);
+        let max_along = profile.keys().max().copied().unwrap_or(0);
+        let _axis_length = max_along - min_along + 1;
+
+        // Auto-scale limits
+        // Instead of hard PX, we define logical dimensions for ticks vs text.
+        // A tick must protrude a little bit, but not be insanely wide.
+        // We REMOVE the maximum length limit so that grid lines and crossing axes ARE identified as ticks.
+        let tick_min_ext = 2u32; // Must stick out a bit from the 1px line
+        let tick_max_width = 12u32; // Not too wide (avoids arabic numerals "0" "1" etc)
+
+        // 4. Scan the profile for "bumps" (runs of extension >= tick_min_ext)
+        let mut ticks: Vec<(f32, f32)> = Vec::new();
+        let mut current_run: Vec<u32> = Vec::new(); // stores the 'along' positions forming a bump
+
+        let mut sorted_along: Vec<u32> = profile.keys().copied().collect();
+        sorted_along.sort();
+
+        let process_bump = |run: &[u32], ticks_out: &mut Vec<(f32, f32)>| {
+            if run.is_empty() {
+                return;
+            }
+            let r_start = *run.first().unwrap();
+            let r_end = *run.last().unwrap();
+            let r_width = r_end - r_start + 1;
+
+            // Classification!
+            // If it's narrow, it's a tick (or a grid line, or a crossing axis).
+            if r_width <= tick_max_width {
+                let center = (r_start + r_end) / 2;
+                let tick_pos = if is_horizontal {
+                    (center as f32, axis_line as f32)
+                } else {
+                    (axis_line as f32, center as f32)
+                };
+                ticks_out.push(tick_pos);
+            }
+        };
+
+        for pos in sorted_along {
+            let ext = *profile.get(&pos).unwrap();
+            if ext >= tick_min_ext {
+                // If there's a gap in `pos`, process the old run
+                if !current_run.is_empty() && pos > *current_run.last().unwrap() + 1 {
+                    process_bump(&current_run, &mut ticks);
+                    current_run.clear();
+                }
+                current_run.push(pos);
+            } else {
+                if !current_run.is_empty() {
+                    process_bump(&current_run, &mut ticks);
+                    current_run.clear();
+                }
+            }
+        }
+        if !current_run.is_empty() {
+            process_bump(&current_run, &mut ticks);
+        }
+
+        let body_pixels_vec: Vec<(u32, u32)> = island.into_iter().collect();
+        (body_pixels_vec, ticks)
+    };
+
     let mut x_ticks: Vec<(f32, f32)> = Vec::new();
     let mut y_ticks: Vec<(f32, f32)> = Vec::new();
     let mut x_axis_pixels: Vec<(u32, u32)> = Vec::new();
     let mut y_axis_pixels: Vec<(u32, u32)> = Vec::new();
 
     if let Some(axis_y) = x_axis_row {
-        // Filter to only pixels connected to the X-axis line,
-        // bounded by tick_max_length to exclude text labels beyond ticks
-        let tick_max_length = 30u32;
-        let connected = flood_fill_connected_to_axis(
-            &axis_pixels, axis_y, true, 2, tick_max_length,
-        );
-
-        // Collect all connected pixels on or near this row (±2px for line thickness)
-        for &(px, py) in &connected {
-            if (py as i32 - axis_y as i32).unsigned_abs() <= 2 {
-                x_axis_pixels.push((px, py));
-            }
-        }
-
-        // Find ticks using only connected pixels
-        let tick_min_length = 3u32;
-        let tick_max_length = 30u32;
-
-        let mut col_runs: HashMap<u32, (u32, u32)> = HashMap::new(); // col -> (min_y, max_y)
-        for &(px, py) in &connected {
-            let entry = col_runs.entry(px).or_insert((py, py));
-            entry.0 = entry.0.min(py);
-            entry.1 = entry.1.max(py);
-        }
-
-        for (&col_x, &(min_y, max_y)) in &col_runs {
-            // Check if this column crosses the axis line
-            if min_y <= axis_y && max_y >= axis_y {
-                let extension_down = max_y.saturating_sub(axis_y);
-                let extension_up = axis_y.saturating_sub(min_y);
-                let max_ext = extension_down.max(extension_up);
-
-                // It's a tick if it extends beyond the line thickness but not too far
-                if max_ext >= tick_min_length && max_ext <= tick_max_length {
-                    // Tick position: on the axis line at this column
-                    x_ticks.push((col_x as f32, axis_y as f32));
-                    // Also add tick pixels to the highlight set
-                    for &(px, py) in &connected {
-                        if px == col_x && (py as i32 - axis_y as i32).unsigned_abs() <= max_ext {
-                            if !x_axis_pixels.contains(&(px, py)) {
-                                x_axis_pixels.push((px, py));
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Sort ticks by x coordinate
-        x_ticks.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+        let (body, ticks) = extract_axis_and_ticks(axis_y, true, &x_pixel_set);
+        x_axis_pixels = body;
+        x_ticks = ticks;
     }
 
     if let Some(axis_x) = y_axis_col {
-        // Filter to only pixels connected to the Y-axis line,
-        // bounded by tick_max_length to exclude text labels beyond ticks
-        let tick_max_length = 30u32;
-        let connected = flood_fill_connected_to_axis(
-            &axis_pixels, axis_x, false, 2, tick_max_length,
-        );
-
-        // Collect all connected pixels on or near this column (±2px for line thickness)
-        for &(px, py) in &connected {
-            if (px as i32 - axis_x as i32).unsigned_abs() <= 2 {
-                y_axis_pixels.push((px, py));
-            }
-        }
-
-        // Find ticks using only connected pixels
-        let tick_min_length = 3u32;
-        let tick_max_length = 30u32;
-
-        let mut row_runs: HashMap<u32, (u32, u32)> = HashMap::new(); // row -> (min_x, max_x)
-        for &(px, py) in &connected {
-            let entry = row_runs.entry(py).or_insert((px, px));
-            entry.0 = entry.0.min(px);
-            entry.1 = entry.1.max(px);
-        }
-
-        for (&row_y, &(min_x, max_x)) in &row_runs {
-            if min_x <= axis_x && max_x >= axis_x {
-                let extension_right = max_x.saturating_sub(axis_x);
-                let extension_left = axis_x.saturating_sub(min_x);
-                let max_ext = extension_right.max(extension_left);
-
-                if max_ext >= tick_min_length && max_ext <= tick_max_length {
-                    y_ticks.push((axis_x as f32, row_y as f32));
-                    for &(px, py) in &connected {
-                        if py == row_y && (px as i32 - axis_x as i32).unsigned_abs() <= max_ext {
-                            if !y_axis_pixels.contains(&(px, py)) {
-                                y_axis_pixels.push((px, py));
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        y_ticks.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+        let (body, ticks) = extract_axis_and_ticks(axis_x, false, &y_pixel_set);
+        y_axis_pixels = body;
+        y_ticks = ticks;
     }
 
     // Step 5: Endpoints = outermost ticks (or axis line ends if no ticks found)
+    // We STRICTLY use the purified isolated body `x_axis_pixels` instead of the broad `x_pixel_set` pool.
     let x_axis = if !x_ticks.is_empty() {
         Some((*x_ticks.first().unwrap(), *x_ticks.last().unwrap()))
     } else if let Some(axis_y) = x_axis_row {
-        if let Some(xs) = row_xs.get(&axis_y) {
-            let min_x = *xs.iter().min().unwrap();
-            let max_x = *xs.iter().max().unwrap();
+        if !x_axis_pixels.is_empty() {
+            let min_x = x_axis_pixels.iter().map(|&(x, _)| x).min().unwrap();
+            let max_x = x_axis_pixels.iter().map(|&(x, _)| x).max().unwrap();
             Some(((min_x as f32, axis_y as f32), (max_x as f32, axis_y as f32)))
-        } else { None }
-    } else { None };
+        } else {
+            None
+        }
+    } else {
+        None
+    };
 
     let y_axis = if !y_ticks.is_empty() {
         Some((*y_ticks.first().unwrap(), *y_ticks.last().unwrap()))
     } else if let Some(axis_x) = y_axis_col {
-        if let Some(ys) = col_ys.get(&axis_x) {
-            let min_y = *ys.iter().min().unwrap();
-            let max_y = *ys.iter().max().unwrap();
+        if !y_axis_pixels.is_empty() {
+            let min_y = y_axis_pixels.iter().map(|&(_, y)| y).min().unwrap();
+            let max_y = y_axis_pixels.iter().map(|&(_, y)| y).max().unwrap();
             Some(((axis_x as f32, min_y as f32), (axis_x as f32, max_y as f32)))
-        } else { None }
-    } else { None };
-
-    // Add remaining unclassified axis pixels
-    let remaining: Vec<(u32, u32)> = axis_pixels
-        .iter()
-        .filter(|p| !x_axis_pixels.contains(p) && !y_axis_pixels.contains(p))
-        .copied()
-        .collect();
-
-    for (px, py) in remaining {
-        let dist_to_x = x_axis_row.map_or(f32::MAX, |ay| (py as f32 - ay as f32).abs());
-        let dist_to_y = y_axis_col.map_or(f32::MAX, |ax| (px as f32 - ax as f32).abs());
-        if dist_to_x < dist_to_y {
-            x_axis_pixels.push((px, py));
         } else {
-            y_axis_pixels.push((px, py));
+            None
         }
-    }
+    } else {
+        None
+    };
 
     AxisDetectionResult {
         x_axis,
@@ -399,11 +455,17 @@ pub fn analyze_mask_for_data(
     for y in 0..h_us {
         for x in 0..w_us {
             let idx = y * w_us + x;
-            if !mask[idx] { continue; }
+            if !mask[idx] {
+                continue;
+            }
             let off = idx * 4;
-            if off + 2 >= rgba.len() { continue; }
+            if off + 2 >= rgba.len() {
+                continue;
+            }
             let pixel = [rgba[off], rgba[off + 1], rgba[off + 2]];
-            if is_bg_color(pixel, bg_color) { continue; }
+            if is_bg_color(pixel, bg_color) {
+                continue;
+            }
             pixel_colors.push((pixel, x as u32, y as u32));
         }
     }
@@ -459,7 +521,9 @@ pub fn analyze_mask_for_data(
     let mut groups: Vec<DetectedColorGroup> = Vec::new();
 
     for (i, pixels) in cluster_pixels.into_iter().enumerate() {
-        if pixels.len() < 5 { continue; }
+        if pixels.len() < 5 {
+            continue;
+        }
 
         let avg_color = [
             centroids[i][0] as u8,
@@ -490,19 +554,11 @@ pub fn analyze_mask_for_data(
 /// Sample N points along a pixel cluster using arc-length parameterization.
 /// Handles non-function curves (circles, hyperbolas) correctly.
 /// Supports multi-segment curves (occluded curves with gaps).
-pub fn sample_points_from_cluster(
-    pixels: &[(u32, u32)],
-    n: usize,
-    w: u32,
-) -> Vec<(f32, f32)> {
+pub fn sample_points_from_cluster(pixels: &[(u32, u32)], n: usize, w: u32) -> Vec<(f32, f32)> {
     sample_points_arc_length(pixels, n, w)
 }
 
-fn sample_points_arc_length(
-    pixels: &[(u32, u32)],
-    n: usize,
-    _w: u32,
-) -> Vec<(f32, f32)> {
+fn sample_points_arc_length(pixels: &[(u32, u32)], n: usize, _w: u32) -> Vec<(f32, f32)> {
     if pixels.is_empty() || n == 0 {
         return Vec::new();
     }
@@ -534,7 +590,8 @@ fn sample_points_arc_length(
     let grand_total: f32 = chain_lengths.iter().sum();
     if grand_total < 1.0 {
         // All chains are trivially short
-        return chains.iter()
+        return chains
+            .iter()
             .flat_map(|c| c.iter().map(|&(x, y)| (x as f32, y as f32)))
             .take(n)
             .collect();
@@ -543,7 +600,8 @@ fn sample_points_arc_length(
     // Total points in all chains combined
     let total_points_available: usize = chains.iter().map(|c| c.len()).sum();
     if total_points_available <= n {
-        return chains.iter()
+        return chains
+            .iter()
             .flat_map(|c| c.iter().map(|&(x, y)| (x as f32, y as f32)))
             .collect();
     }
@@ -559,7 +617,11 @@ fn sample_points_arc_length(
             0
         };
         // Ensure at least 1 point per chain (if chain is non-trivial)
-        let share = if chains[i].len() >= 2 { share.max(1) } else { share };
+        let share = if chains[i].len() >= 2 {
+            share.max(1)
+        } else {
+            share
+        };
         points_per_chain.push(share);
         allocated += share;
     }
@@ -612,9 +674,9 @@ fn sample_points_arc_length(
             };
 
             // Binary search for the segment containing this arc-length
-            let seg = match arcs.binary_search_by(|v| {
-                v.partial_cmp(&target).unwrap_or(std::cmp::Ordering::Equal)
-            }) {
+            let seg = match arcs
+                .binary_search_by(|v| v.partial_cmp(&target).unwrap_or(std::cmp::Ordering::Equal))
+            {
                 Ok(idx) => idx,
                 Err(idx) => idx.saturating_sub(1),
             };
@@ -625,11 +687,13 @@ fn sample_points_arc_length(
                 let seg_start = arcs[seg];
                 let seg_end = arcs[seg + 1];
                 let seg_len = seg_end - seg_start;
-                let t = if seg_len > 0.0 { (target - seg_start) / seg_len } else { 0.0 };
-                let x = chain[seg].0 as f32
-                    + t * (chain[seg + 1].0 as f32 - chain[seg].0 as f32);
-                let y = chain[seg].1 as f32
-                    + t * (chain[seg + 1].1 as f32 - chain[seg].1 as f32);
+                let t = if seg_len > 0.0 {
+                    (target - seg_start) / seg_len
+                } else {
+                    0.0
+                };
+                let x = chain[seg].0 as f32 + t * (chain[seg + 1].0 as f32 - chain[seg].0 as f32);
+                let y = chain[seg].1 as f32 + t * (chain[seg + 1].1 as f32 - chain[seg].1 as f32);
                 sampled.push((x, y));
             } else {
                 sampled.push((chain[seg].0 as f32, chain[seg].1 as f32));
@@ -688,7 +752,9 @@ fn build_pixel_chains(pixels: &[(u32, u32)]) -> Vec<Vec<(u32, u32)>> {
         let mut best_dist = f64::MAX;
 
         for (j, &pt) in thin_points.iter().enumerate() {
-            if used[j] { continue; }
+            if used[j] {
+                continue;
+            }
             let dx = pt.0 as f64 - current_chain.last().unwrap().0 as f64;
             let dy = pt.1 as f64 - current_chain.last().unwrap().1 as f64;
             let dist = dx * dx + dy * dy;
