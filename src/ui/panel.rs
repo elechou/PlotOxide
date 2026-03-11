@@ -26,16 +26,29 @@ pub fn draw_panel(state: &mut AppState, ctx: &egui::Context, actions: &mut Vec<A
                 ui.add_space(10.0);
 
                 ui.horizontal(|ui| {
+                    // Magic axis detection button
+                    let magic_active = state.mask.active
+                        && state.mask.mask_mode == crate::state::MaskMode::AxisCalib;
+                    let mut magic_btn = egui::Button::new("✨ Magic");
+                    if magic_active {
+                        magic_btn = magic_btn.fill(Color32::from_rgb(180, 120, 50));
+                    }
+                    if ui
+                        .add(magic_btn)
+                        .on_hover_text("Auto-detect axes by painting a mask")
+                        .clicked()
+                    {
+                        actions.push(Action::MaskToggleForAxis);
+                    }
+
                     let btn_text = if state.mode == AppMode::AddCalib {
-                        "Stop Calib"
+                        "Stop"
                     } else {
-                        "Place Calib Points"
+                        "Manual Place"
                     };
                     let mut btn = egui::Button::new(btn_text);
                     if state.mode == AppMode::AddCalib {
-                        btn = btn.fill(Color32::from_rgb(180, 50, 50));
-                    } else if state.calib_pts.len() < 4 {
-                        btn = btn.fill(Color32::from_rgb(220, 50, 50)); // Bright red to attract attention
+                        btn = btn.fill(Color32::from_rgb(180, 120, 50));
                     }
 
                     if ui.add(btn).clicked() {
@@ -46,7 +59,7 @@ pub fn draw_panel(state: &mut AppState, ctx: &egui::Context, actions: &mut Vec<A
                         }));
                     }
 
-                    if ui.button("Clear Calib").clicked() {
+                    if ui.button("Clear").clicked() {
                         actions.push(Action::ClearCalib);
                     }
 

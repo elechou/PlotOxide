@@ -13,6 +13,12 @@ pub enum MaskTool {
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
+pub enum MaskMode {
+    AxisCalib,
+    DataRecog,
+}
+
+#[derive(Clone, Copy, PartialEq, Debug)]
 pub enum AxisHighlight {
     X,
     Y,
@@ -34,6 +40,10 @@ pub struct AxisDetectionResult {
     pub x_axis_pixels: Vec<(u32, u32)>,
     /// Pixel coords of detected Y-axis line (for highlighting)
     pub y_axis_pixels: Vec<(u32, u32)>,
+    /// All detected tick positions on X-axis
+    pub x_ticks: Vec<(f32, f32)>,
+    /// All detected tick positions on Y-axis
+    pub y_ticks: Vec<(f32, f32)>,
 }
 
 #[derive(Clone, Debug)]
@@ -60,6 +70,8 @@ pub struct MaskState {
 
     /// Is mask mode active (sub-toolbar visible)
     pub active: bool,
+    /// Which mode: axis calibration or data recognition
+    pub mask_mode: MaskMode,
     /// Current tool
     pub tool: MaskTool,
     /// Brush radius in image pixels
@@ -71,17 +83,15 @@ pub struct MaskState {
     /// Previous mouse position for interpolation
     pub last_paint_pos: Option<(f32, f32)>,
 
-    /// Undo stack for mask strokes
-    pub undo_stack: Vec<Vec<bool>>,
-    /// Redo stack for mask strokes
-    pub redo_stack: Vec<Vec<bool>>,
-
     /// Detected background color of the image
     pub bg_color: Option<[u8; 3]>,
     /// Cached axis detection result
     pub axis_result: Option<AxisDetectionResult>,
     /// Cached data detection result
     pub data_result: Option<DataDetectionResult>,
+
+    /// User-adjustable color tolerance for data clustering (default 30.0)
+    pub color_tolerance: f32,
 
     /// Which axis to highlight on hover
     pub highlight_axis: Option<AxisHighlight>,
@@ -96,16 +106,16 @@ impl Default for MaskState {
             width: 0,
             height: 0,
             active: false,
+            mask_mode: MaskMode::AxisCalib,
             tool: MaskTool::Pen,
             brush_size: 20.0,
             visible: true,
             painting: false,
             last_paint_pos: None,
-            undo_stack: Vec::new(),
-            redo_stack: Vec::new(),
             bg_color: None,
             axis_result: None,
             data_result: None,
+            color_tolerance: 30.0,
             highlight_axis: None,
             highlight_data_idx: None,
         }
@@ -119,8 +129,6 @@ impl MaskState {
             self.width = w;
             self.height = h;
             self.buffer = vec![false; (w as usize) * (h as usize)];
-            self.undo_stack.clear();
-            self.redo_stack.clear();
         }
     }
 
@@ -216,6 +224,8 @@ pub struct HistorySnapshot {
     pub data_pts: Vec<DataPoint>,
     pub groups: Vec<PointGroup>,
     pub active_group_idx: usize,
+    /// Mask buffer snapshot for unified undo/redo
+    pub mask_buffer: Option<Vec<bool>>,
 }
 
 #[derive(PartialEq, Clone, Copy, Debug)]
@@ -362,15 +372,12 @@ impl Default for AppState {
             zoom: 1.0,
             calib_pts: Vec::new(),
             data_pts: Vec::new(),
-            groups: vec![PointGroup {
-                name: "Group 1".to_string(),
-                color: Color32::from_rgb(0xd7, 0x30, 0x27), // Palette 1
-            }],
+            groups: Vec::new(),
             active_group_idx: 0,
-            x1_val: "0.0".to_string(),
-            x2_val: "10.0".to_string(),
-            y1_val: "0.0".to_string(),
-            y2_val: "10.0".to_string(),
+            x1_val: "".to_string(),
+            x2_val: "".to_string(),
+            y1_val: "".to_string(),
+            y2_val: "".to_string(),
             log_x: false,
             log_y: false,
             dragging_calib_idx: None,
@@ -420,11 +427,8 @@ impl AppState {
         // Clear all data points
         self.data_pts.clear();
 
-        // Reset groups to default single group
-        self.groups = vec![PointGroup {
-            name: "Group 1".to_string(),
-            color: Color32::from_rgb(0xd7, 0x30, 0x27),
-        }];
+        // Reset groups to empty
+        self.groups = Vec::new();
         self.active_group_idx = 0;
 
         // Clear data interaction state
@@ -462,6 +466,11 @@ impl AppState {
             data_pts: self.data_pts.clone(),
             groups: self.groups.clone(),
             active_group_idx: self.active_group_idx,
+            mask_buffer: if self.mask.active {
+                Some(self.mask.buffer.clone())
+            } else {
+                None
+            },
         };
         self.undo_stack.push(snapshot);
         if self.undo_stack.len() > 50 {

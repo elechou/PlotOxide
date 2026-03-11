@@ -2,11 +2,11 @@ use eframe::egui;
 use egui::Color32;
 
 use crate::action::Action;
-use crate::state::{AppState, AxisHighlight};
+use crate::state::{AppState, AxisHighlight, MaskMode};
 
 // ────────────────────────────────────────────────────────────────
 //  Results Panel: appears below the mask sub-toolbar
-//  Shows detected axes and data color groups
+//  Shows detected axes (AxisCalib mode) or data colors (DataRecog mode)
 // ────────────────────────────────────────────────────────────────
 
 pub fn draw_results_panel(state: &AppState, ui: &mut egui::Ui, actions: &mut Vec<Action>) {
@@ -25,229 +25,298 @@ pub fn draw_results_panel(state: &AppState, ui: &mut egui::Ui, actions: &mut Vec
         .collapsible(true)
         .resizable(false)
         .title_bar(false)
-        .default_pos([325.0, 62.0]);
+        .default_pos([325.0, 62.0])
+        .default_width(200.0);
 
     window.show(ui.ctx(), |ui| {
         ui.set_min_width(150.0);
 
-        // ── Axis Calibration Section ──
-        if let Some(ref axis_result) = state.mask.axis_result {
-            let has_x = axis_result.x_axis.is_some();
-            let has_y = axis_result.y_axis.is_some();
-
-            if has_x || has_y {
-                ui.label(
-                    egui::RichText::new("Axes Calibration")
-                        .strong()
-                        .color(Color32::WHITE),
-                );
-                ui.add_space(2.0);
-
-                // X-Axis row
-                if has_x {
-                    let x_resp = egui::Frame::NONE
-                        .inner_margin(4.0)
-                        .corner_radius(3.0)
-                        .fill(if state.mask.highlight_axis == Some(AxisHighlight::X) {
-                            Color32::from_rgba_unmultiplied(66, 133, 244, 40)
-                        } else {
-                            Color32::TRANSPARENT
-                        })
-                        .show(ui, |ui| {
-                            ui.horizontal(|ui| {
-                                ui.colored_label(Color32::from_rgb(0x42, 0x85, 0xF4), "X-Axis");
-                                ui.with_layout(
-                                    egui::Layout::right_to_left(egui::Align::Center),
-                                    |ui| {
-                                        if ui.button("Apply").clicked() {
-                                            actions.push(Action::MaskApplyAxis(AxisHighlight::X));
-                                        }
-                                    },
-                                );
-                            });
-                        });
-
-                    // Hover detection for X-axis row
-                    if x_resp.response.hovered() {
-                        if state.mask.highlight_axis != Some(AxisHighlight::X) {
-                            actions.push(Action::MaskSetAxisHighlight(Some(AxisHighlight::X)));
-                        }
-                    } else if state.mask.highlight_axis == Some(AxisHighlight::X) {
-                        // Check if mouse is not on Y-axis row either
-                        let mouse_on_y = false; // will be set below
-                        if !mouse_on_y {
-                            actions.push(Action::MaskSetAxisHighlight(None));
-                        }
-                    }
-                }
-
-                // Y-Axis row
-                if has_y {
-                    let y_resp = egui::Frame::NONE
-                        .inner_margin(4.0)
-                        .corner_radius(3.0)
-                        .fill(if state.mask.highlight_axis == Some(AxisHighlight::Y) {
-                            Color32::from_rgba_unmultiplied(52, 168, 83, 40)
-                        } else {
-                            Color32::TRANSPARENT
-                        })
-                        .show(ui, |ui| {
-                            ui.horizontal(|ui| {
-                                ui.colored_label(Color32::from_rgb(0x34, 0xA8, 0x53), "Y-Axis");
-                                ui.with_layout(
-                                    egui::Layout::right_to_left(egui::Align::Center),
-                                    |ui| {
-                                        if ui.button("Apply").clicked() {
-                                            actions.push(Action::MaskApplyAxis(AxisHighlight::Y));
-                                        }
-                                    },
-                                );
-                            });
-                        });
-
-                    if y_resp.response.hovered() {
-                        if state.mask.highlight_axis != Some(AxisHighlight::Y) {
-                            actions.push(Action::MaskSetAxisHighlight(Some(AxisHighlight::Y)));
-                        }
-                    } else if state.mask.highlight_axis == Some(AxisHighlight::Y)
-                        && !ui.ctx().input(|i| {
-                            i.pointer.hover_pos().map_or(false, |_| false) // fallback
-                        })
-                    {
-                        actions.push(Action::MaskSetAxisHighlight(None));
-                    }
-                }
-
-                ui.add_space(4.0);
-                ui.separator();
-                ui.add_space(4.0);
-            }
-        }
-
-        // ── Data Recognition Section ──
-        if let Some(ref data_result) = state.mask.data_result {
-            if !data_result.groups.is_empty() {
-                ui.label(
-                    egui::RichText::new("Data Recognition")
-                        .strong()
-                        .color(Color32::WHITE),
-                );
-                ui.add_space(2.0);
-
-                for (idx, group) in data_result.groups.iter().enumerate() {
-                    let is_highlighted = state.mask.highlight_data_idx == Some(idx);
-
-                    let group_resp = egui::Frame::NONE
-                        .inner_margin(4.0)
-                        .corner_radius(3.0)
-                        .fill(if is_highlighted {
-                            Color32::from_rgba_unmultiplied(
-                                group.color[0],
-                                group.color[1],
-                                group.color[2],
-                                40,
-                            )
-                        } else {
-                            Color32::TRANSPARENT
-                        })
-                        .show(ui, |ui| {
-                            ui.horizontal(|ui| {
-                                // Color swatch
-                                let (rect, _) = ui.allocate_exact_size(
-                                    egui::vec2(16.0, 16.0),
-                                    egui::Sense::hover(),
-                                );
-                                ui.painter().rect_filled(
-                                    rect,
-                                    3.0,
-                                    Color32::from_rgb(
-                                        group.color[0],
-                                        group.color[1],
-                                        group.color[2],
-                                    ),
-                                );
-
-                                // Pixel count
-                                ui.label(
-                                    egui::RichText::new(format!("{}px", group.pixel_coords.len()))
-                                        .small()
-                                        .color(Color32::LIGHT_GRAY),
-                                );
-
-                                // Mode selector
-                                let mode_label = match group.curve_mode {
-                                    crate::state::DataCurveMode::Continuous => "Curve",
-                                    crate::state::DataCurveMode::Scatter => "Scatter",
-                                };
-                                let combo_id = egui::Id::new("data_mode").with(idx);
-                                egui::ComboBox::from_id_salt(combo_id)
-                                    .selected_text(mode_label)
-                                    .width(65.0)
-                                    .show_ui(ui, |ui| {
-                                        if ui
-                                            .selectable_label(
-                                                group.curve_mode
-                                                    == crate::state::DataCurveMode::Continuous,
-                                                "Curve",
-                                            )
-                                            .clicked()
-                                        {
-                                            actions.push(Action::MaskSetDataMode(
-                                                idx,
-                                                crate::state::DataCurveMode::Continuous,
-                                            ));
-                                        }
-                                        if ui
-                                            .selectable_label(
-                                                group.curve_mode
-                                                    == crate::state::DataCurveMode::Scatter,
-                                                "Scatter",
-                                            )
-                                            .clicked()
-                                        {
-                                            actions.push(Action::MaskSetDataMode(
-                                                idx,
-                                                crate::state::DataCurveMode::Scatter,
-                                            ));
-                                        }
-                                    });
-
-                                // Point count (only for Continuous)
-                                if group.curve_mode == crate::state::DataCurveMode::Continuous {
-                                    let mut pts = group.point_count;
-                                    if ui
-                                        .add(
-                                            egui::DragValue::new(&mut pts)
-                                                .range(2..=200)
-                                                .prefix("n="),
-                                        )
-                                        .changed()
-                                    {
-                                        actions.push(Action::MaskSetDataPoints(idx, pts));
-                                    }
-                                }
-
-                                // Add button
-                                if ui
-                                    .button("Add")
-                                    .on_hover_text("Add detected points to active data group")
-                                    .clicked()
-                                {
-                                    actions.push(Action::MaskAddData(idx));
-                                }
-                            });
-                        });
-
-                    // Hover highlighting
-                    if group_resp.response.hovered() {
-                        if state.mask.highlight_data_idx != Some(idx) {
-                            actions.push(Action::MaskSetDataHighlight(Some(idx)));
-                        }
-                    } else if state.mask.highlight_data_idx == Some(idx) {
-                        actions.push(Action::MaskSetDataHighlight(None));
-                    }
-                }
-            }
+        match state.mask.mask_mode {
+            MaskMode::AxisCalib => draw_axis_section(state, ui, actions),
+            MaskMode::DataRecog => draw_data_section(state, ui, actions),
         }
     });
+}
+
+fn draw_axis_section(state: &AppState, ui: &mut egui::Ui, actions: &mut Vec<Action>) {
+    if let Some(ref axis_result) = state.mask.axis_result {
+        let has_x = axis_result.x_axis.is_some();
+        let has_y = axis_result.y_axis.is_some();
+
+        if !has_x && !has_y {
+            ui.colored_label(Color32::GRAY, "No axes detected. Paint over axis lines.");
+            return;
+        }
+
+        ui.label(
+            egui::RichText::new("Axes Calibration")
+                .strong()
+                .color(Color32::WHITE),
+        );
+        ui.add_space(2.0);
+
+        // X-Axis row
+        if has_x {
+            let x_resp = egui::Frame::NONE
+                .inner_margin(4.0)
+                .corner_radius(3.0)
+                .fill(if state.mask.highlight_axis == Some(AxisHighlight::X) {
+                    Color32::from_rgba_unmultiplied(66, 133, 244, 40)
+                } else {
+                    Color32::TRANSPARENT
+                })
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.colored_label(Color32::from_rgb(0x42, 0x85, 0xF4), "X-Axis");
+                        let tick_info = format!("({} ticks)", axis_result.x_ticks.len());
+                        ui.label(
+                            egui::RichText::new(tick_info)
+                                .small()
+                                .color(Color32::GRAY),
+                        );
+                        ui.with_layout(
+                            egui::Layout::right_to_left(egui::Align::Center),
+                            |ui| {
+                                if ui.button("Apply").clicked() {
+                                    actions.push(Action::MaskApplyAxis(AxisHighlight::X));
+                                }
+                            },
+                        );
+                    });
+                });
+
+            if x_resp.response.hovered() {
+                if state.mask.highlight_axis != Some(AxisHighlight::X) {
+                    actions.push(Action::MaskSetAxisHighlight(Some(AxisHighlight::X)));
+                }
+            } else if state.mask.highlight_axis == Some(AxisHighlight::X) {
+                actions.push(Action::MaskSetAxisHighlight(None));
+            }
+        }
+
+        // Y-Axis row
+        if has_y {
+            let y_resp = egui::Frame::NONE
+                .inner_margin(4.0)
+                .corner_radius(3.0)
+                .fill(if state.mask.highlight_axis == Some(AxisHighlight::Y) {
+                    Color32::from_rgba_unmultiplied(52, 168, 83, 40)
+                } else {
+                    Color32::TRANSPARENT
+                })
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.colored_label(Color32::from_rgb(0x34, 0xA8, 0x53), "Y-Axis");
+                        let tick_info = format!("({} ticks)", axis_result.y_ticks.len());
+                        ui.label(
+                            egui::RichText::new(tick_info)
+                                .small()
+                                .color(Color32::GRAY),
+                        );
+                        ui.with_layout(
+                            egui::Layout::right_to_left(egui::Align::Center),
+                            |ui| {
+                                if ui.button("Apply").clicked() {
+                                    actions.push(Action::MaskApplyAxis(AxisHighlight::Y));
+                                }
+                            },
+                        );
+                    });
+                });
+
+            if y_resp.response.hovered() {
+                if state.mask.highlight_axis != Some(AxisHighlight::Y) {
+                    actions.push(Action::MaskSetAxisHighlight(Some(AxisHighlight::Y)));
+                }
+            } else if state.mask.highlight_axis == Some(AxisHighlight::Y) {
+                actions.push(Action::MaskSetAxisHighlight(None));
+            }
+        }
+
+        ui.add_space(6.0);
+        ui.separator();
+        ui.add_space(4.0);
+
+        // Finish button
+        if ui
+            .add(
+                egui::Button::new("✅ Finish Calibration")
+                    .min_size(egui::vec2(ui.available_width(), 28.0)),
+            )
+            .on_hover_text("Confirm calibration and switch to data collection mode")
+            .clicked()
+        {
+            actions.push(Action::MaskFinishCalib);
+        }
+    }
+}
+
+fn draw_data_section(state: &AppState, ui: &mut egui::Ui, actions: &mut Vec<Action>) {
+    // Tolerance slider
+    ui.horizontal(|ui| {
+        ui.label(
+            egui::RichText::new("Tolerance:")
+                .small()
+                .color(Color32::LIGHT_GRAY),
+        );
+        let mut tol = state.mask.color_tolerance;
+        let slider = egui::Slider::new(&mut tol, 5.0..=80.0)
+            .step_by(1.0)
+            .show_value(false);
+        if ui.add_sized([50.0, 18.0], slider).changed() {
+            actions.push(Action::MaskSetColorTolerance(tol));
+        }
+        let mut tol_drag = state.mask.color_tolerance;
+        if ui
+            .add(
+                egui::DragValue::new(&mut tol_drag)
+                    .range(5.0..=80.0)
+                    .speed(0.5),
+            )
+            .changed()
+        {
+            actions.push(Action::MaskSetColorTolerance(tol_drag));
+        }
+    });
+
+    ui.add_space(4.0);
+
+    if let Some(ref data_result) = state.mask.data_result {
+        if data_result.groups.is_empty() {
+            ui.colored_label(Color32::GRAY, "No data colors detected.");
+            return;
+        }
+
+        ui.label(
+            egui::RichText::new("Data Recognition")
+                .strong()
+                .color(Color32::WHITE),
+        );
+        ui.add_space(2.0);
+
+        for (idx, group) in data_result.groups.iter().enumerate() {
+            let is_highlighted = state.mask.highlight_data_idx == Some(idx);
+
+            let group_resp = egui::Frame::NONE
+                .inner_margin(4.0)
+                .corner_radius(3.0)
+                .fill(if is_highlighted {
+                    Color32::from_rgba_unmultiplied(
+                        group.color[0],
+                        group.color[1],
+                        group.color[2],
+                        40,
+                    )
+                } else {
+                    Color32::TRANSPARENT
+                })
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        // Color swatch
+                        let (rect, _) = ui.allocate_exact_size(
+                            egui::vec2(16.0, 16.0),
+                            egui::Sense::hover(),
+                        );
+                        ui.painter().rect_filled(
+                            rect,
+                            3.0,
+                            Color32::from_rgb(group.color[0], group.color[1], group.color[2]),
+                        );
+
+                        // Pixel count
+                        ui.label(
+                            egui::RichText::new(format!("{}px", group.pixel_coords.len()))
+                                .small()
+                                .color(Color32::LIGHT_GRAY),
+                        );
+
+                        // Mode selector
+                        let mode_label = match group.curve_mode {
+                            crate::state::DataCurveMode::Continuous => "Curve",
+                            crate::state::DataCurveMode::Scatter => "Scatter",
+                        };
+                        let combo_id = egui::Id::new("data_mode").with(idx);
+                        egui::ComboBox::from_id_salt(combo_id)
+                            .selected_text(mode_label)
+                            .width(65.0)
+                            .show_ui(ui, |ui| {
+                                if ui
+                                    .selectable_label(
+                                        group.curve_mode
+                                            == crate::state::DataCurveMode::Continuous,
+                                        "Curve",
+                                    )
+                                    .clicked()
+                                {
+                                    actions.push(Action::MaskSetDataMode(
+                                        idx,
+                                        crate::state::DataCurveMode::Continuous,
+                                    ));
+                                }
+                                if ui
+                                    .selectable_label(
+                                        group.curve_mode
+                                            == crate::state::DataCurveMode::Scatter,
+                                        "Scatter",
+                                    )
+                                    .clicked()
+                                {
+                                    actions.push(Action::MaskSetDataMode(
+                                        idx,
+                                        crate::state::DataCurveMode::Scatter,
+                                    ));
+                                }
+                            });
+
+                        // Point count (only for Continuous)
+                        if group.curve_mode == crate::state::DataCurveMode::Continuous {
+                            let mut pts = group.point_count;
+                            if ui
+                                .add(
+                                    egui::DragValue::new(&mut pts)
+                                        .range(2..=200)
+                                        .prefix("n="),
+                                )
+                                .changed()
+                            {
+                                actions.push(Action::MaskSetDataPoints(idx, pts));
+                            }
+                        }
+
+                        // Add button
+                        if ui
+                            .button("Add")
+                            .on_hover_text("Create new group with this color and add points")
+                            .clicked()
+                        {
+                            actions.push(Action::MaskAddData(idx));
+                        }
+                    });
+                });
+
+            if group_resp.response.hovered() {
+                if state.mask.highlight_data_idx != Some(idx) {
+                    actions.push(Action::MaskSetDataHighlight(Some(idx)));
+                }
+            } else if state.mask.highlight_data_idx == Some(idx) {
+                actions.push(Action::MaskSetDataHighlight(None));
+            }
+        }
+
+        ui.add_space(6.0);
+        ui.separator();
+        ui.add_space(4.0);
+
+        // Finish button
+        if ui
+            .add(
+                egui::Button::new("✅ Finish")
+                    .min_size(egui::vec2(ui.available_width(), 28.0)),
+            )
+            .on_hover_text("Clear mask and finish data recognition")
+            .clicked()
+        {
+            actions.push(Action::MaskFinishCalib);
+        }
+    }
 }

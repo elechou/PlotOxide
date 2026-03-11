@@ -140,6 +140,8 @@ pub fn draw_mask_highlights(
     to_screen: &dyn Fn(f32, f32) -> Pos2,
     _zoom: f32,
 ) {
+    let rgba = state.decoded_rgba.as_deref();
+
     // Axis highlight
     if let Some(ref axis_hl) = state.mask.highlight_axis {
         if let Some(ref result) = state.mask.axis_result {
@@ -147,15 +149,63 @@ pub fn draw_mask_highlights(
                 crate::state::AxisHighlight::X => &result.x_axis_pixels,
                 crate::state::AxisHighlight::Y => &result.y_axis_pixels,
             };
-            let hl_color = match axis_hl {
-                crate::state::AxisHighlight::X => {
-                    Color32::from_rgba_unmultiplied(66, 133, 244, 180)
-                }
-                crate::state::AxisHighlight::Y => Color32::from_rgba_unmultiplied(52, 168, 83, 180),
+
+            draw_pixel_set_real_color(painter, pixels, to_screen, rgba, state.mask.width);
+
+            // Draw ❌ crosses at tick positions
+            let ticks = match axis_hl {
+                crate::state::AxisHighlight::X => &result.x_ticks,
+                crate::state::AxisHighlight::Y => &result.y_ticks,
+            };
+            let endpoints = match axis_hl {
+                crate::state::AxisHighlight::X => &result.x_axis,
+                crate::state::AxisHighlight::Y => &result.y_axis,
             };
 
-            // Draw highlighted pixels in runs for performance
-            draw_pixel_set_highlight(painter, pixels, to_screen, hl_color);
+            for tick in ticks {
+                let pos = to_screen(tick.0, tick.1);
+                let is_endpoint = endpoints.map_or(false, |(start, end)| {
+                    ((tick.0 - start.0).abs() < 1.0 && (tick.1 - start.1).abs() < 1.0)
+                        || ((tick.0 - end.0).abs() < 1.0 && (tick.1 - end.1).abs() < 1.0)
+                });
+                let cross_size = if is_endpoint { 8.0 } else { 5.0 };
+                let cross_width = if is_endpoint { 2.0 } else { 1.5 };
+                let cross_color = match axis_hl {
+                    crate::state::AxisHighlight::X => Color32::from_rgb(0x42, 0x85, 0xF4),
+                    crate::state::AxisHighlight::Y => Color32::from_rgb(0x34, 0xA8, 0x53),
+                };
+
+                // White outline
+                painter.line_segment(
+                    [
+                        Pos2::new(pos.x - cross_size, pos.y - cross_size),
+                        Pos2::new(pos.x + cross_size, pos.y + cross_size),
+                    ],
+                    Stroke::new(cross_width + 1.5, Color32::WHITE),
+                );
+                painter.line_segment(
+                    [
+                        Pos2::new(pos.x + cross_size, pos.y - cross_size),
+                        Pos2::new(pos.x - cross_size, pos.y + cross_size),
+                    ],
+                    Stroke::new(cross_width + 1.5, Color32::WHITE),
+                );
+                // Colored cross
+                painter.line_segment(
+                    [
+                        Pos2::new(pos.x - cross_size, pos.y - cross_size),
+                        Pos2::new(pos.x + cross_size, pos.y + cross_size),
+                    ],
+                    Stroke::new(cross_width, cross_color),
+                );
+                painter.line_segment(
+                    [
+                        Pos2::new(pos.x + cross_size, pos.y - cross_size),
+                        Pos2::new(pos.x - cross_size, pos.y + cross_size),
+                    ],
+                    Stroke::new(cross_width, cross_color),
+                );
+            }
         }
     }
 
@@ -163,13 +213,13 @@ pub fn draw_mask_highlights(
     if let Some(idx) = state.mask.highlight_data_idx {
         if let Some(ref result) = state.mask.data_result {
             if let Some(group) = result.groups.get(idx) {
-                let hl_color = Color32::from_rgba_unmultiplied(
-                    group.color[0],
-                    group.color[1],
-                    group.color[2],
-                    180,
+                draw_pixel_set_real_color(
+                    painter,
+                    &group.pixel_coords,
+                    to_screen,
+                    rgba,
+                    state.mask.width,
                 );
-                draw_pixel_set_highlight(painter, &group.pixel_coords, to_screen, hl_color);
 
                 // Draw sampled points
                 for &(px, py) in &group.sampled_points {
@@ -186,23 +236,61 @@ pub fn draw_mask_highlights(
     }
 }
 
-fn draw_pixel_set_highlight(
+/// Draw highlighted pixels using their actual color from the image,
+/// with white boundary strokes for visibility.
+fn draw_pixel_set_real_color(
     painter: &egui::Painter,
     pixels: &[(u32, u32)],
     to_screen: &dyn Fn(f32, f32) -> Pos2,
-    color: Color32,
+    rgba: Option<&[u8]>,
+    img_width: u32,
 ) {
-    // Sort by y then x for run-length compression
-    // Since pixels may come pre-sorted or not, we batch by row
     if pixels.is_empty() {
         return;
     }
 
+    let pixel_set: std::collections::HashSet<(u32, u32)> = pixels.iter().copied().collect();
+    let w_us = img_width as usize;
+
     for &(px, py) in pixels {
+        let color = if let Some(rgba_data) = rgba {
+            let off = ((py as usize) * w_us + (px as usize)) * 4;
+            if off + 2 < rgba_data.len() {
+                Color32::from_rgb(rgba_data[off], rgba_data[off + 1], rgba_data[off + 2])
+            } else {
+                Color32::from_rgb(200, 100, 50)
+            }
+        } else {
+            Color32::from_rgb(200, 100, 50)
+        };
+
         let p0 = to_screen(px as f32, py as f32);
         let p1 = to_screen((px + 1) as f32, (py + 1) as f32);
         let rect = egui::Rect::from_min_max(p0, p1);
         painter.rect_filled(rect, 0.0, color);
+
+        // White border on boundary edges
+        let is_boundary = |dx: i32, dy: i32| -> bool {
+            let nx = px as i32 + dx;
+            let ny = py as i32 + dy;
+            if nx < 0 || ny < 0 { return true; }
+            !pixel_set.contains(&(nx as u32, ny as u32))
+        };
+
+        let feather = Color32::from_rgba_unmultiplied(255, 255, 255, 180);
+
+        if is_boundary(0, -1) {
+            painter.line_segment([p0, Pos2::new(p1.x, p0.y)], Stroke::new(1.0, feather));
+        }
+        if is_boundary(0, 1) {
+            painter.line_segment([Pos2::new(p0.x, p1.y), p1], Stroke::new(1.0, feather));
+        }
+        if is_boundary(-1, 0) {
+            painter.line_segment([p0, Pos2::new(p0.x, p1.y)], Stroke::new(1.0, feather));
+        }
+        if is_boundary(1, 0) {
+            painter.line_segment([Pos2::new(p1.x, p0.y), p1], Stroke::new(1.0, feather));
+        }
     }
 }
 

@@ -51,17 +51,9 @@ pub fn draw_ui(state: &mut AppState, ctx: &egui::Context, actions: &mut Vec<Acti
         );
 
         if i.consume_shortcut(&redo_cmd) || i.consume_shortcut(&redo_ctrl) {
-            if state.mask.active {
-                actions.push(Action::MaskRedo);
-            } else {
-                actions.push(Action::Redo);
-            }
+            actions.push(Action::Redo);
         } else if i.consume_shortcut(&undo_cmd) || i.consume_shortcut(&undo_ctrl) {
-            if state.mask.active {
-                actions.push(Action::MaskUndo);
-            } else {
-                actions.push(Action::Undo);
-            }
+            actions.push(Action::Undo);
         }
     });
 

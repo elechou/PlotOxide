@@ -6,7 +6,6 @@ use std::collections::HashMap;
 // ────────────────────────────────────────────────────────────────
 
 /// Detect the most common color in the image (quantized to reduce palette).
-/// Returns the dominant RGB color.
 pub fn detect_background_color(rgba: &[u8], w: u32, h: u32) -> [u8; 3] {
     let mut histogram: HashMap<(u8, u8, u8), u32> = HashMap::new();
     let total = (w as usize) * (h as usize);
@@ -16,17 +15,14 @@ pub fn detect_background_color(rgba: &[u8], w: u32, h: u32) -> [u8; 3] {
         if off + 2 >= rgba.len() {
             break;
         }
-        // Quantize to 8-level bins (divide by 32) for color grouping
         let r = rgba[off] >> 5;
         let g = rgba[off + 1] >> 5;
         let b = rgba[off + 2] >> 5;
         *histogram.entry((r, g, b)).or_insert(0) += 1;
     }
 
-    // Find the most common quantized color
     let (best_q, _) = histogram.iter().max_by_key(|&(_, &c)| c).unwrap_or((&(7, 7, 7), &0));
 
-    // Map back to approximate RGB center of the bin
     [
         (best_q.0 << 5) | 0x10,
         (best_q.1 << 5) | 0x10,
@@ -38,22 +34,23 @@ pub fn detect_background_color(rgba: &[u8], w: u32, h: u32) -> [u8; 3] {
 //  Color Distance
 // ────────────────────────────────────────────────────────────────
 
-fn color_distance_sq(a: [u8; 3], b: [u8; 3]) -> u32 {
-    let dr = a[0] as i32 - b[0] as i32;
-    let dg = a[1] as i32 - b[1] as i32;
-    let db = a[2] as i32 - b[2] as i32;
-    (dr * dr + dg * dg + db * db) as u32
+fn color_distance_sq(a: [u8; 3], b: [u8; 3]) -> f32 {
+    let dr = a[0] as f32 - b[0] as f32;
+    let dg = a[1] as f32 - b[1] as f32;
+    let db = a[2] as f32 - b[2] as f32;
+    dr * dr + dg * dg + db * db
 }
 
-/// Threshold for considering two colors "similar" (~30 per channel)
-const COLOR_SIMILARITY_THRESHOLD: u32 = 30 * 30 * 3;
+fn is_bg_color(pixel: [u8; 3], bg: [u8; 3]) -> bool {
+    color_distance_sq(pixel, bg) < 30.0 * 30.0 * 3.0
+}
 
-fn is_similar_color(a: [u8; 3], b: [u8; 3]) -> bool {
-    color_distance_sq(a, b) < COLOR_SIMILARITY_THRESHOLD
+fn _is_similar_with_tolerance(a: [u8; 3], b: [u8; 3], tolerance: f32) -> bool {
+    color_distance_sq(a, b) < tolerance * tolerance * 3.0
 }
 
 // ────────────────────────────────────────────────────────────────
-//  Axis Detection within Masked Region
+//  Axis Detection (Improved)
 // ────────────────────────────────────────────────────────────────
 
 pub fn analyze_mask_for_axes(
@@ -66,24 +63,17 @@ pub fn analyze_mask_for_axes(
     let w_us = w as usize;
     let h_us = h as usize;
 
-    // Step 1: Find the "second color" — most common non-background color in masked region
+    // Step 1: Find the most common non-background color in masked region
     let mut color_counts: HashMap<(u8, u8, u8), u32> = HashMap::new();
 
     for y in 0..h_us {
         for x in 0..w_us {
             let idx = y * w_us + x;
-            if !mask[idx] {
-                continue;
-            }
+            if !mask[idx] { continue; }
             let off = idx * 4;
-            if off + 2 >= rgba.len() {
-                continue;
-            }
+            if off + 2 >= rgba.len() { continue; }
             let pixel = [rgba[off], rgba[off + 1], rgba[off + 2]];
-            if is_similar_color(pixel, bg_color) {
-                continue;
-            }
-            // Quantize to 4-level bins for grouping
+            if is_bg_color(pixel, bg_color) { continue; }
             let qr = pixel[0] >> 6;
             let qg = pixel[1] >> 6;
             let qb = pixel[2] >> 6;
@@ -91,7 +81,6 @@ pub fn analyze_mask_for_axes(
         }
     }
 
-    // Get the most common non-bg quantized color
     let axis_color_q = color_counts
         .iter()
         .max_by_key(|&(_, &c)| c)
@@ -99,37 +88,24 @@ pub fn analyze_mask_for_axes(
 
     if axis_color_q.is_none() {
         return AxisDetectionResult {
-            x_axis: None,
-            y_axis: None,
-            x_axis_pixels: Vec::new(),
-            y_axis_pixels: Vec::new(),
+            x_axis: None, y_axis: None,
+            x_axis_pixels: Vec::new(), y_axis_pixels: Vec::new(),
+            x_ticks: Vec::new(), y_ticks: Vec::new(),
         };
     }
 
     let axis_q = axis_color_q.unwrap();
-    let _axis_color_center = [
-        (axis_q.0 << 6) | 0x20,
-        (axis_q.1 << 6) | 0x20,
-        (axis_q.2 << 6) | 0x20,
-    ];
 
-    // Step 2: Collect all axis-colored pixels in masked region
+    // Step 2: Collect all axis-colored pixels
     let mut axis_pixels: Vec<(u32, u32)> = Vec::new();
     for y in 0..h_us {
         for x in 0..w_us {
             let idx = y * w_us + x;
-            if !mask[idx] {
-                continue;
-            }
+            if !mask[idx] { continue; }
             let off = idx * 4;
-            if off + 2 >= rgba.len() {
-                continue;
-            }
+            if off + 2 >= rgba.len() { continue; }
             let pixel = [rgba[off], rgba[off + 1], rgba[off + 2]];
-            if is_similar_color(pixel, bg_color) {
-                continue;
-            }
-            // Check if this pixel matches the axis color (quantized)
+            if is_bg_color(pixel, bg_color) { continue; }
             let qr = pixel[0] >> 6;
             let qg = pixel[1] >> 6;
             let qb = pixel[2] >> 6;
@@ -141,55 +117,152 @@ pub fn analyze_mask_for_axes(
 
     if axis_pixels.is_empty() {
         return AxisDetectionResult {
-            x_axis: None,
-            y_axis: None,
-            x_axis_pixels: Vec::new(),
-            y_axis_pixels: Vec::new(),
+            x_axis: None, y_axis: None,
+            x_axis_pixels: Vec::new(), y_axis_pixels: Vec::new(),
+            x_ticks: Vec::new(), y_ticks: Vec::new(),
         };
     }
 
-    // Step 3: Detect horizontal and vertical line segments
-    // Project pixels onto rows and columns, find rows/cols with many axis-colored pixels
-    let mut row_counts: HashMap<u32, Vec<u32>> = HashMap::new(); // y -> list of x coords
-    let mut col_counts: HashMap<u32, Vec<u32>> = HashMap::new(); // x -> list of y coords
+    // Step 3: Find the densest single row → actual X-axis line
+    let mut row_pixel_counts: HashMap<u32, u32> = HashMap::new();
+    let mut col_pixel_counts: HashMap<u32, u32> = HashMap::new();
+    let mut row_xs: HashMap<u32, Vec<u32>> = HashMap::new();
+    let mut col_ys: HashMap<u32, Vec<u32>> = HashMap::new();
 
     for &(x, y) in &axis_pixels {
-        row_counts.entry(y).or_default().push(x);
-        col_counts.entry(x).or_default().push(y);
+        *row_pixel_counts.entry(y).or_insert(0) += 1;
+        *col_pixel_counts.entry(x).or_insert(0) += 1;
+        row_xs.entry(y).or_default().push(x);
+        col_ys.entry(x).or_default().push(y);
     }
 
-    // Find the densest horizontal band (potential X-axis)
-    // Group adjacent rows with high pixel counts
-    let x_axis_result = detect_axis_line(&row_counts, &axis_pixels, true, w, h);
-    let y_axis_result = detect_axis_line(&col_counts, &axis_pixels, false, w, h);
+    // Find the row with the most pixels → this IS the axis line
+    let x_axis_row = row_pixel_counts.iter()
+        .filter(|&(_, &count)| count >= 10)
+        .max_by_key(|&(_, &count)| count)
+        .map(|(&y, _)| y);
 
-    // Separate axis pixels into X and Y groups
-    let mut x_axis_pixels = Vec::new();
-    let mut y_axis_pixels = Vec::new();
+    let y_axis_col = col_pixel_counts.iter()
+        .filter(|&(_, &count)| count >= 10)
+        .max_by_key(|&(_, &count)| count)
+        .map(|(&x, _)| x);
 
-    if let Some((start, end)) = &x_axis_result {
-        // X-axis: pixels near the detected horizontal line
-        let y_mid = (start.1 + end.1) / 2.0;
-        let tolerance = 5.0;
+    // Step 4: Detect ticks — short perpendicular segments extending from the axis
+    let mut x_ticks: Vec<(f32, f32)> = Vec::new();
+    let mut y_ticks: Vec<(f32, f32)> = Vec::new();
+    let mut x_axis_pixels: Vec<(u32, u32)> = Vec::new();
+    let mut y_axis_pixels: Vec<(u32, u32)> = Vec::new();
+
+    if let Some(axis_y) = x_axis_row {
+        // Collect all pixels on or near this row (±2px for line thickness)
         for &(px, py) in &axis_pixels {
-            if (py as f32 - y_mid).abs() < tolerance {
+            if (py as i32 - axis_y as i32).unsigned_abs() <= 2 {
                 x_axis_pixels.push((px, py));
             }
         }
+
+        // Find ticks: columns where axis-colored pixels extend perpendicular to the axis
+        // A tick is a column with pixels both ON the axis and extending away from it
+        let tick_min_length = 3u32;
+        let tick_max_length = 30u32;
+
+        let mut col_runs: HashMap<u32, (u32, u32)> = HashMap::new(); // col -> (min_y, max_y)
+        for &(px, py) in &axis_pixels {
+            let entry = col_runs.entry(px).or_insert((py, py));
+            entry.0 = entry.0.min(py);
+            entry.1 = entry.1.max(py);
+        }
+
+        for (&col_x, &(min_y, max_y)) in &col_runs {
+            // Check if this column crosses the axis line
+            if min_y <= axis_y && max_y >= axis_y {
+                let extension_down = max_y.saturating_sub(axis_y);
+                let extension_up = axis_y.saturating_sub(min_y);
+                let max_ext = extension_down.max(extension_up);
+
+                // It's a tick if it extends beyond the line thickness but not too far
+                if max_ext >= tick_min_length && max_ext <= tick_max_length {
+                    // Tick position: on the axis line at this column
+                    x_ticks.push((col_x as f32, axis_y as f32));
+                    // Also add tick pixels to the highlight set
+                    for &(px, py) in &axis_pixels {
+                        if px == col_x && (py as i32 - axis_y as i32).unsigned_abs() <= max_ext {
+                            if !x_axis_pixels.contains(&(px, py)) {
+                                x_axis_pixels.push((px, py));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Sort ticks by x coordinate
+        x_ticks.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
     }
 
-    if let Some((start, end)) = &y_axis_result {
-        // Y-axis: pixels near the detected vertical line
-        let x_mid = (start.0 + end.0) / 2.0;
-        let tolerance = 5.0;
+    if let Some(axis_x) = y_axis_col {
+        // Collect all pixels on or near this column (±2px for line thickness)
         for &(px, py) in &axis_pixels {
-            if (px as f32 - x_mid).abs() < tolerance {
+            if (px as i32 - axis_x as i32).unsigned_abs() <= 2 {
                 y_axis_pixels.push((px, py));
             }
         }
+
+        // Find ticks: rows where axis-colored pixels extend perpendicular
+        let tick_min_length = 3u32;
+        let tick_max_length = 30u32;
+
+        let mut row_runs: HashMap<u32, (u32, u32)> = HashMap::new(); // row -> (min_x, max_x)
+        for &(px, py) in &axis_pixels {
+            let entry = row_runs.entry(py).or_insert((px, px));
+            entry.0 = entry.0.min(px);
+            entry.1 = entry.1.max(px);
+        }
+
+        for (&row_y, &(min_x, max_x)) in &row_runs {
+            if min_x <= axis_x && max_x >= axis_x {
+                let extension_right = max_x.saturating_sub(axis_x);
+                let extension_left = axis_x.saturating_sub(min_x);
+                let max_ext = extension_right.max(extension_left);
+
+                if max_ext >= tick_min_length && max_ext <= tick_max_length {
+                    y_ticks.push((axis_x as f32, row_y as f32));
+                    for &(px, py) in &axis_pixels {
+                        if py == row_y && (px as i32 - axis_x as i32).unsigned_abs() <= max_ext {
+                            if !y_axis_pixels.contains(&(px, py)) {
+                                y_axis_pixels.push((px, py));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        y_ticks.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
     }
 
-    // If some pixels aren't classified, add them to the closer axis
+    // Step 5: Endpoints = outermost ticks (or axis line ends if no ticks found)
+    let x_axis = if !x_ticks.is_empty() {
+        Some((*x_ticks.first().unwrap(), *x_ticks.last().unwrap()))
+    } else if let Some(axis_y) = x_axis_row {
+        if let Some(xs) = row_xs.get(&axis_y) {
+            let min_x = *xs.iter().min().unwrap();
+            let max_x = *xs.iter().max().unwrap();
+            Some(((min_x as f32, axis_y as f32), (max_x as f32, axis_y as f32)))
+        } else { None }
+    } else { None };
+
+    let y_axis = if !y_ticks.is_empty() {
+        Some((*y_ticks.first().unwrap(), *y_ticks.last().unwrap()))
+    } else if let Some(axis_x) = y_axis_col {
+        if let Some(ys) = col_ys.get(&axis_x) {
+            let min_y = *ys.iter().min().unwrap();
+            let max_y = *ys.iter().max().unwrap();
+            Some(((axis_x as f32, min_y as f32), (axis_x as f32, max_y as f32)))
+        } else { None }
+    } else { None };
+
+    // Add remaining unclassified axis pixels
     let remaining: Vec<(u32, u32)> = axis_pixels
         .iter()
         .filter(|p| !x_axis_pixels.contains(p) && !y_axis_pixels.contains(p))
@@ -197,19 +270,8 @@ pub fn analyze_mask_for_axes(
         .collect();
 
     for (px, py) in remaining {
-        let dist_to_x = if let Some((s, e)) = &x_axis_result {
-            let y_mid = (s.1 + e.1) / 2.0;
-            (py as f32 - y_mid).abs()
-        } else {
-            f32::MAX
-        };
-        let dist_to_y = if let Some((s, e)) = &y_axis_result {
-            let x_mid = (s.0 + e.0) / 2.0;
-            (px as f32 - x_mid).abs()
-        } else {
-            f32::MAX
-        };
-
+        let dist_to_x = x_axis_row.map_or(f32::MAX, |ay| (py as f32 - ay as f32).abs());
+        let dist_to_y = y_axis_col.map_or(f32::MAX, |ax| (px as f32 - ax as f32).abs());
         if dist_to_x < dist_to_y {
             x_axis_pixels.push((px, py));
         } else {
@@ -218,102 +280,17 @@ pub fn analyze_mask_for_axes(
     }
 
     AxisDetectionResult {
-        x_axis: x_axis_result,
-        y_axis: y_axis_result,
+        x_axis,
+        y_axis,
         x_axis_pixels,
         y_axis_pixels,
-    }
-}
-
-/// Detect an axis line from row/column projection data.
-/// For horizontal (is_row=true): finds the densest row band, then finds endpoints.
-/// For vertical (is_row=false): finds the densest column band, then finds endpoints.
-fn detect_axis_line(
-    line_counts: &HashMap<u32, Vec<u32>>,
-    _all_pixels: &[(u32, u32)],
-    is_row: bool,
-    _w: u32,
-    _h: u32,
-) -> Option<((f32, f32), (f32, f32))> {
-    if line_counts.is_empty() {
-        return None;
-    }
-
-    // Find the line (row or col) with the most pixels — this is likely the axis
-    let min_pixel_count = 10; // Need at least 10 pixels to be considered an axis
-
-    // Group adjacent lines into bands
-    let mut lines_sorted: Vec<(u32, usize)> = line_counts
-        .iter()
-        .map(|(&k, v)| (k, v.len()))
-        .filter(|&(_, count)| count >= 3)
-        .collect();
-    lines_sorted.sort_by_key(|&(k, _)| k);
-
-    if lines_sorted.is_empty() {
-        return None;
-    }
-
-    // Find best band of adjacent lines
-    let mut best_band_start = 0;
-    let mut best_band_end = 0;
-    let mut best_band_total = 0usize;
-    let mut band_start = 0;
-
-    for i in 1..=lines_sorted.len() {
-        let should_break = i == lines_sorted.len()
-            || lines_sorted[i].0 > lines_sorted[i - 1].0 + 3; // Allow 3px gap
-
-        if should_break {
-            let total: usize = (band_start..i).map(|j| lines_sorted[j].1).sum();
-            if total > best_band_total {
-                best_band_total = total;
-                best_band_start = band_start;
-                best_band_end = i - 1;
-            }
-            band_start = i;
-        }
-    }
-
-    if best_band_total < min_pixel_count {
-        return None;
-    }
-
-    // The axis line position is the median of the band
-    let band_min = lines_sorted[best_band_start].0;
-    let band_max = lines_sorted[best_band_end].0;
-    let axis_pos = (band_min + band_max) as f32 / 2.0;
-
-    // Collect all cross-axis positions for pixels in this band
-    let mut cross_positions: Vec<u32> = Vec::new();
-    for &(line_idx, _) in &lines_sorted[best_band_start..=best_band_end] {
-        if let Some(positions) = line_counts.get(&line_idx) {
-            cross_positions.extend(positions);
-        }
-    }
-    cross_positions.sort();
-
-    if cross_positions.is_empty() {
-        return None;
-    }
-
-    // Find the endpoints: look for tick marks at the extremes
-    // The axis endpoints are the min and max cross-positions
-    // But we should look for "tick" patterns — short perpendicular segments
-    let min_cross = *cross_positions.first().unwrap() as f32;
-    let max_cross = *cross_positions.last().unwrap() as f32;
-
-    if is_row {
-        // Horizontal axis: cross positions are X, axis_pos is Y
-        Some(((min_cross, axis_pos), (max_cross, axis_pos)))
-    } else {
-        // Vertical axis: cross positions are Y, axis_pos is X
-        Some(((axis_pos, min_cross), (axis_pos, max_cross)))
+        x_ticks,
+        y_ticks,
     }
 }
 
 // ────────────────────────────────────────────────────────────────
-//  Data Recognition: Color Clustering within Masked Region
+//  Data Recognition: Color Clustering with Tolerance
 // ────────────────────────────────────────────────────────────────
 
 pub fn analyze_mask_for_data(
@@ -322,131 +299,116 @@ pub fn analyze_mask_for_data(
     w: u32,
     h: u32,
     bg_color: [u8; 3],
+    tolerance: f32,
 ) -> DataDetectionResult {
     let w_us = w as usize;
     let h_us = h as usize;
 
     // Step 1: Collect all non-background pixels in masked region
-    let mut pixel_colors: Vec<([u8; 3], u32, u32)> = Vec::new(); // (color, x, y)
+    let mut pixel_colors: Vec<([u8; 3], u32, u32)> = Vec::new();
 
     for y in 0..h_us {
         for x in 0..w_us {
             let idx = y * w_us + x;
-            if !mask[idx] {
-                continue;
-            }
+            if !mask[idx] { continue; }
             let off = idx * 4;
-            if off + 2 >= rgba.len() {
-                continue;
-            }
+            if off + 2 >= rgba.len() { continue; }
             let pixel = [rgba[off], rgba[off + 1], rgba[off + 2]];
-            if is_similar_color(pixel, bg_color) {
-                continue;
-            }
+            if is_bg_color(pixel, bg_color) { continue; }
             pixel_colors.push((pixel, x as u32, y as u32));
         }
     }
 
     if pixel_colors.is_empty() {
-        return DataDetectionResult {
-            groups: Vec::new(),
-        };
+        return DataDetectionResult { groups: Vec::new() };
     }
 
-    // Step 2: Cluster by quantized color (4-level bins)
-    let mut clusters: HashMap<(u8, u8, u8), Vec<(u32, u32)>> = HashMap::new();
+    // Step 2: Cluster using user-adjustable tolerance
+    // Use a greedy centroid-based clustering approach
+    let mut centroids: Vec<[f32; 3]> = Vec::new();
+    let mut cluster_pixels: Vec<Vec<(u32, u32)>> = Vec::new();
 
     for &(pixel, x, y) in &pixel_colors {
-        let qr = pixel[0] >> 6;
-        let qg = pixel[1] >> 6;
-        let qb = pixel[2] >> 6;
-        clusters.entry((qr, qg, qb)).or_default().push((x, y));
+        let pf = [pixel[0] as f32, pixel[1] as f32, pixel[2] as f32];
+
+        // Find nearest centroid within tolerance
+        let mut best_idx: Option<usize> = None;
+        let mut best_dist = f32::MAX;
+        for (i, centroid) in centroids.iter().enumerate() {
+            let dr = pf[0] - centroid[0];
+            let dg = pf[1] - centroid[1];
+            let db = pf[2] - centroid[2];
+            let dist = dr * dr + dg * dg + db * db;
+            if dist < best_dist {
+                best_dist = dist;
+                best_idx = Some(i);
+            }
+        }
+
+        let tol_sq = tolerance * tolerance * 3.0;
+        if let Some(idx) = best_idx {
+            if best_dist < tol_sq {
+                // Add to existing cluster
+                let n = cluster_pixels[idx].len() as f32;
+                // Update running centroid
+                centroids[idx][0] = (centroids[idx][0] * n + pf[0]) / (n + 1.0);
+                centroids[idx][1] = (centroids[idx][1] * n + pf[1]) / (n + 1.0);
+                centroids[idx][2] = (centroids[idx][2] * n + pf[2]) / (n + 1.0);
+                cluster_pixels[idx].push((x, y));
+            } else {
+                // New cluster
+                centroids.push(pf);
+                cluster_pixels.push(vec![(x, y)]);
+            }
+        } else {
+            centroids.push(pf);
+            cluster_pixels.push(vec![(x, y)]);
+        }
     }
 
-    // Step 3: Merge similar quantized clusters
-    let mut merged_groups: Vec<DetectedColorGroup> = Vec::new();
-    let mut processed: Vec<bool> = vec![false; clusters.len()];
-    let cluster_keys: Vec<(u8, u8, u8)> = clusters.keys().copied().collect();
+    // Step 3: Build groups from clusters (skip noise clusters < 5 pixels)
+    let mut groups: Vec<DetectedColorGroup> = Vec::new();
 
-    for i in 0..cluster_keys.len() {
-        if processed[i] {
-            continue;
-        }
-        let key_i = cluster_keys[i];
-        let center_i = [
-            (key_i.0 << 6) | 0x20,
-            (key_i.1 << 6) | 0x20,
-            (key_i.2 << 6) | 0x20,
-        ];
+    for (i, pixels) in cluster_pixels.into_iter().enumerate() {
+        if pixels.len() < 5 { continue; }
 
-        let mut merged_pixels: Vec<(u32, u32)> = clusters[&key_i].clone();
-        processed[i] = true;
-
-        // Merge nearby clusters
-        for j in (i + 1)..cluster_keys.len() {
-            if processed[j] {
-                continue;
-            }
-            let key_j = cluster_keys[j];
-            let center_j = [
-                (key_j.0 << 6) | 0x20,
-                (key_j.1 << 6) | 0x20,
-                (key_j.2 << 6) | 0x20,
-            ];
-            if is_similar_color(center_i, center_j) {
-                merged_pixels.extend(clusters[&key_j].iter());
-                processed[j] = true;
-            }
-        }
-
-        // Skip very small clusters (noise)
-        if merged_pixels.len() < 5 {
-            continue;
-        }
-
-        // Compute average color of merged pixels
-        let mut sum_r: u64 = 0;
-        let mut sum_g: u64 = 0;
-        let mut sum_b: u64 = 0;
-        for &(x, y) in &merged_pixels {
-            let off = ((y as usize) * w_us + (x as usize)) * 4;
-            if off + 2 < rgba.len() {
-                sum_r += rgba[off] as u64;
-                sum_g += rgba[off + 1] as u64;
-                sum_b += rgba[off + 2] as u64;
-            }
-        }
-        let n = merged_pixels.len() as u64;
         let avg_color = [
-            (sum_r / n) as u8,
-            (sum_g / n) as u8,
-            (sum_b / n) as u8,
+            centroids[i][0] as u8,
+            centroids[i][1] as u8,
+            centroids[i][2] as u8,
         ];
 
-        // Generate initial sampled points
-        let sampled = sample_points_from_cluster(&merged_pixels, 10, w);
+        let sampled = sample_points_arc_length(&pixels, 10, w);
 
-        merged_groups.push(DetectedColorGroup {
+        groups.push(DetectedColorGroup {
             color: avg_color,
-            pixel_coords: merged_pixels,
+            pixel_coords: pixels,
             curve_mode: DataCurveMode::Continuous,
             point_count: 10,
             sampled_points: sampled,
         });
     }
 
-    // Sort groups by pixel count (largest first)
-    merged_groups.sort_by(|a, b| b.pixel_coords.len().cmp(&a.pixel_coords.len()));
+    groups.sort_by(|a, b| b.pixel_coords.len().cmp(&a.pixel_coords.len()));
 
-    DataDetectionResult {
-        groups: merged_groups,
-    }
+    DataDetectionResult { groups }
 }
 
-/// Sample N evenly-spaced points along a cluster of pixels.
-/// For continuous curves: sorts by X, then picks N evenly spaced median-Y points.
-/// For scatter: just picks the centroid of sub-clusters.
+// ────────────────────────────────────────────────────────────────
+//  Arc-Length Point Sampling
+// ────────────────────────────────────────────────────────────────
+
+/// Sample N points along a pixel cluster using arc-length parameterization.
+/// Handles non-function curves (circles, hyperbolas) correctly.
 pub fn sample_points_from_cluster(
+    pixels: &[(u32, u32)],
+    n: usize,
+    w: u32,
+) -> Vec<(f32, f32)> {
+    sample_points_arc_length(pixels, n, w)
+}
+
+fn sample_points_arc_length(
     pixels: &[(u32, u32)],
     n: usize,
     _w: u32,
@@ -455,45 +417,128 @@ pub fn sample_points_from_cluster(
         return Vec::new();
     }
 
-    // Group pixels by X coordinate
+    // Build a connected chain of points via nearest-neighbor walk
+    let chain = build_pixel_chain(pixels);
+
+    if chain.is_empty() {
+        return Vec::new();
+    }
+    if chain.len() <= n {
+        return chain.iter().map(|&(x, y)| (x as f32, y as f32)).collect();
+    }
+
+    // Compute cumulative arc-length
+    let mut arc_lengths: Vec<f32> = vec![0.0];
+    for i in 1..chain.len() {
+        let dx = chain[i].0 as f32 - chain[i - 1].0 as f32;
+        let dy = chain[i].1 as f32 - chain[i - 1].1 as f32;
+        let dist = (dx * dx + dy * dy).sqrt();
+        arc_lengths.push(arc_lengths[i - 1] + dist);
+    }
+
+    let total_length = *arc_lengths.last().unwrap();
+    if total_length < 1.0 {
+        return vec![(chain[0].0 as f32, chain[0].1 as f32)];
+    }
+
+    // Pick N points at equal arc-length intervals
+    let mut sampled = Vec::with_capacity(n);
+    for i in 0..n {
+        let target = if n == 1 {
+            total_length / 2.0
+        } else {
+            (i as f32) * total_length / ((n - 1) as f32)
+        };
+
+        // Binary search for the segment containing this arc-length
+        let seg = match arc_lengths.binary_search_by(|v| v.partial_cmp(&target).unwrap_or(std::cmp::Ordering::Equal)) {
+            Ok(idx) => idx,
+            Err(idx) => idx.saturating_sub(1),
+        };
+        let seg = seg.min(chain.len() - 1);
+
+        // Interpolate within the segment
+        if seg + 1 < chain.len() {
+            let seg_start = arc_lengths[seg];
+            let seg_end = arc_lengths[seg + 1];
+            let seg_len = seg_end - seg_start;
+            let t = if seg_len > 0.0 { (target - seg_start) / seg_len } else { 0.0 };
+            let x = chain[seg].0 as f32 + t * (chain[seg + 1].0 as f32 - chain[seg].0 as f32);
+            let y = chain[seg].1 as f32 + t * (chain[seg + 1].1 as f32 - chain[seg].1 as f32);
+            sampled.push((x, y));
+        } else {
+            sampled.push((chain[seg].0 as f32, chain[seg].1 as f32));
+        }
+    }
+
+    sampled
+}
+
+/// Build an ordered chain of points by nearest-neighbor walking.
+/// This handles arbitrary curves (circles, zigzags, etc.)
+fn build_pixel_chain(pixels: &[(u32, u32)]) -> Vec<(u32, u32)> {
+    if pixels.is_empty() {
+        return Vec::new();
+    }
+    if pixels.len() <= 2 {
+        return pixels.to_vec();
+    }
+
+    // For large pixel sets, thin to medial axis first (take median Y per X column)
     let mut by_x: HashMap<u32, Vec<u32>> = HashMap::new();
     for &(x, y) in pixels {
         by_x.entry(x).or_default().push(y);
     }
 
-    // Sort X values
-    let mut x_vals: Vec<u32> = by_x.keys().copied().collect();
-    x_vals.sort();
-
-    if x_vals.is_empty() {
-        return Vec::new();
+    let mut thin_points: Vec<(u32, u32)> = Vec::new();
+    for (&x, ys) in &by_x {
+        let mut ys_sorted = ys.clone();
+        ys_sorted.sort();
+        let median_y = ys_sorted[ys_sorted.len() / 2];
+        thin_points.push((x, median_y));
     }
 
-    // For each X, compute median Y
-    let mut curve_points: Vec<(f32, f32)> = Vec::new();
-    for &x in &x_vals {
-        if let Some(ys) = by_x.get(&x) {
-            let mut ys_sorted = ys.clone();
-            ys_sorted.sort();
-            let median_y = ys_sorted[ys_sorted.len() / 2];
-            curve_points.push((x as f32, median_y as f32));
+    if thin_points.len() <= 2 {
+        thin_points.sort_by_key(|p| p.0);
+        return thin_points;
+    }
+
+    // Nearest-neighbor chain starting from the leftmost point
+    thin_points.sort_by_key(|p| p.0);
+    let mut chain: Vec<(u32, u32)> = Vec::with_capacity(thin_points.len());
+    let mut used = vec![false; thin_points.len()];
+
+    // Start from the point with the smallest x
+    let current = 0;
+    chain.push(thin_points[current]);
+    used[current] = true;
+
+    for _ in 1..thin_points.len() {
+        let mut best_idx = None;
+        let mut best_dist = f64::MAX;
+
+        for (j, &pt) in thin_points.iter().enumerate() {
+            if used[j] { continue; }
+            let dx = pt.0 as f64 - chain.last().unwrap().0 as f64;
+            let dy = pt.1 as f64 - chain.last().unwrap().1 as f64;
+            let dist = dx * dx + dy * dy;
+            if dist < best_dist {
+                best_dist = dist;
+                best_idx = Some(j);
+            }
+        }
+
+        if let Some(idx) = best_idx {
+            // Skip if gap is too large (probably disconnected segment)
+            if best_dist > 100.0 * 100.0 {
+                break;
+            }
+            chain.push(thin_points[idx]);
+            used[idx] = true;
+        } else {
+            break;
         }
     }
 
-    if curve_points.len() <= n {
-        return curve_points;
-    }
-
-    // Pick N evenly spaced points
-    let mut sampled = Vec::with_capacity(n);
-    for i in 0..n {
-        let idx = if n == 1 {
-            curve_points.len() / 2
-        } else {
-            i * (curve_points.len() - 1) / (n - 1)
-        };
-        sampled.push(curve_points[idx]);
-    }
-
-    sampled
+    chain
 }

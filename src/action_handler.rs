@@ -296,6 +296,11 @@ pub fn handle(state: &mut AppState, action: Action) {
                     data_pts: state.data_pts.clone(),
                     groups: state.groups.clone(),
                     active_group_idx: state.active_group_idx,
+                    mask_buffer: if state.mask.active {
+                        Some(state.mask.buffer.clone())
+                    } else {
+                        None
+                    },
                 };
                 state.redo_stack.push(redo_snap);
 
@@ -303,6 +308,11 @@ pub fn handle(state: &mut AppState, action: Action) {
                 state.data_pts = snapshot.data_pts;
                 state.groups = snapshot.groups;
                 state.active_group_idx = snapshot.active_group_idx;
+                if let Some(buf) = snapshot.mask_buffer {
+                    state.mask.buffer = buf;
+                    state.mask.axis_result = None;
+                    state.mask.data_result = None;
+                }
 
                 state.selected_data_indices.clear();
                 crate::core::recalculate_data(
@@ -324,6 +334,11 @@ pub fn handle(state: &mut AppState, action: Action) {
                     data_pts: state.data_pts.clone(),
                     groups: state.groups.clone(),
                     active_group_idx: state.active_group_idx,
+                    mask_buffer: if state.mask.active {
+                        Some(state.mask.buffer.clone())
+                    } else {
+                        None
+                    },
                 };
                 state.undo_stack.push(undo_snap);
 
@@ -331,6 +346,11 @@ pub fn handle(state: &mut AppState, action: Action) {
                 state.data_pts = snapshot.data_pts;
                 state.groups = snapshot.groups;
                 state.active_group_idx = snapshot.active_group_idx;
+                if let Some(buf) = snapshot.mask_buffer {
+                    state.mask.buffer = buf;
+                    state.mask.axis_result = None;
+                    state.mask.data_result = None;
+                }
 
                 state.selected_data_indices.clear();
                 crate::core::recalculate_data(
@@ -527,21 +547,48 @@ pub fn handle(state: &mut AppState, action: Action) {
         // ── Mask actions ──────────────────────────────────────────────
         Action::MaskToggle => {
             let was_active = state.mask.active;
-            state.mask.active = !was_active;
-            if state.mask.active {
-                // Switch to mask mode
+            if was_active && state.mask.mask_mode == crate::state::MaskMode::DataRecog {
+                state.mask.active = false;
+                if state.mode == AppMode::Mask {
+                    state.mode = AppMode::Select;
+                }
+            } else {
+                state.mask.active = true;
+                state.mask.mask_mode = crate::state::MaskMode::DataRecog;
                 state.mode = AppMode::Mask;
-                // Ensure mask buffer matches image size
                 if state.texture.is_some() {
                     state
                         .mask
                         .ensure_buffer(state.img_size.x as u32, state.img_size.y as u32);
                 }
-            } else {
-                // Leave mask mode, go back to Select
+            }
+        }
+        Action::MaskToggleForAxis => {
+            let was_active = state.mask.active;
+            if was_active && state.mask.mask_mode == crate::state::MaskMode::AxisCalib {
+                state.mask.active = false;
                 if state.mode == AppMode::Mask {
                     state.mode = AppMode::Select;
                 }
+            } else {
+                state.mask.active = true;
+                state.mask.mask_mode = crate::state::MaskMode::AxisCalib;
+                state.mode = AppMode::Mask;
+                if state.texture.is_some() {
+                    state
+                        .mask
+                        .ensure_buffer(state.img_size.x as u32, state.img_size.y as u32);
+                }
+            }
+        }
+        Action::MaskFinishCalib => {
+            // Finish: deactivate mask, clear mask buffer, go back to Select
+            state.mask.active = false;
+            state.mask.buffer.fill(false);
+            state.mask.axis_result = None;
+            state.mask.data_result = None;
+            if state.mode == AppMode::Mask {
+                state.mode = AppMode::Select;
             }
         }
         Action::MaskSetTool(tool) => {
@@ -555,24 +602,14 @@ pub fn handle(state: &mut AppState, action: Action) {
         }
         Action::MaskClear => {
             if state.mask.has_any_mask() {
-                // Save snapshot before clearing
-                state.mask.undo_stack.push(state.mask.buffer.clone());
-                if state.mask.undo_stack.len() > 30 {
-                    state.mask.undo_stack.remove(0);
-                }
-                state.mask.redo_stack.clear();
+                state.save_snapshot();
             }
             state.mask.buffer.fill(false);
             state.mask.axis_result = None;
             state.mask.data_result = None;
         }
         Action::MaskPaintStart => {
-            // Save current buffer as undo snapshot before painting
-            state.mask.undo_stack.push(state.mask.buffer.clone());
-            if state.mask.undo_stack.len() > 30 {
-                state.mask.undo_stack.remove(0);
-            }
-            state.mask.redo_stack.clear();
+            state.save_snapshot();
             state.mask.painting = true;
             state.mask.last_paint_pos = None;
         }
@@ -595,42 +632,49 @@ pub fn handle(state: &mut AppState, action: Action) {
         Action::MaskPaintEnd => {
             state.mask.painting = false;
             state.mask.last_paint_pos = None;
-            // Trigger analysis if there's mask content and decoded RGBA data
             if state.mask.has_any_mask() {
                 if let Some(ref rgba) = state.decoded_rgba {
                     let w = state.mask.width;
                     let h = state.mask.height;
                     let bg = state.mask.bg_color.unwrap_or([255, 255, 255]);
-                    state.mask.axis_result = Some(
-                        crate::ui::mask::analysis::analyze_mask_for_axes(
-                            rgba, &state.mask.buffer, w, h, bg,
-                        ),
-                    );
-                    state.mask.data_result = Some(
-                        crate::ui::mask::analysis::analyze_mask_for_data(
-                            rgba, &state.mask.buffer, w, h, bg,
-                        ),
-                    );
+                    match state.mask.mask_mode {
+                        crate::state::MaskMode::AxisCalib => {
+                            state.mask.axis_result = Some(
+                                crate::ui::mask::analysis::analyze_mask_for_axes(
+                                    rgba, &state.mask.buffer, w, h, bg,
+                                ),
+                            );
+                            state.mask.data_result = None;
+                        }
+                        crate::state::MaskMode::DataRecog => {
+                            state.mask.data_result = Some(
+                                crate::ui::mask::analysis::analyze_mask_for_data(
+                                    rgba, &state.mask.buffer, w, h, bg,
+                                    state.mask.color_tolerance,
+                                ),
+                            );
+                            state.mask.axis_result = None;
+                        }
+                    }
                 }
             } else {
                 state.mask.axis_result = None;
                 state.mask.data_result = None;
             }
         }
-        Action::MaskUndo => {
-            if let Some(prev_buffer) = state.mask.undo_stack.pop() {
-                state.mask.redo_stack.push(state.mask.buffer.clone());
-                state.mask.buffer = prev_buffer;
-                state.mask.axis_result = None;
-                state.mask.data_result = None;
-            }
-        }
-        Action::MaskRedo => {
-            if let Some(next_buffer) = state.mask.redo_stack.pop() {
-                state.mask.undo_stack.push(state.mask.buffer.clone());
-                state.mask.buffer = next_buffer;
-                state.mask.axis_result = None;
-                state.mask.data_result = None;
+        Action::MaskSetColorTolerance(tol) => {
+            state.mask.color_tolerance = tol;
+            if state.mask.has_any_mask() {
+                if let Some(ref rgba) = state.decoded_rgba {
+                    let w = state.mask.width;
+                    let h = state.mask.height;
+                    let bg = state.mask.bg_color.unwrap_or([255, 255, 255]);
+                    state.mask.data_result = Some(
+                        crate::ui::mask::analysis::analyze_mask_for_data(
+                            rgba, &state.mask.buffer, w, h, bg, tol,
+                        ),
+                    );
+                }
             }
         }
 
@@ -729,28 +773,32 @@ pub fn handle(state: &mut AppState, action: Action) {
             }
         }
         Action::MaskAddData(idx) => {
-            // Clone the sampled points before mutating state
-            let points = state.mask.data_result.as_ref().and_then(|result| {
-                result.groups.get(idx).map(|group| group.sampled_points.clone())
+            // Clone both the color and sampled points before mutating state
+            let group_data = state.mask.data_result.as_ref().and_then(|result| {
+                result.groups.get(idx).map(|group| {
+                    (group.color, group.sampled_points.clone())
+                })
             });
 
-            if let Some(pts) = points {
+            if let Some((color, pts)) = group_data {
                 if !pts.is_empty() {
                     state.save_snapshot();
-                    if state.groups.is_empty() {
-                        state.groups.push(PointGroup {
-                            name: "Group 1".to_string(),
-                            color: Color32::from_rgb(0xd7, 0x30, 0x27),
-                        });
-                        state.active_group_idx = 0;
-                    }
+                    // Create a new group with the detected color
+                    let new_group_idx = state.groups.len();
+                    let group_name = format!("Group {}", new_group_idx + 1);
+                    state.groups.push(PointGroup {
+                        name: group_name,
+                        color: Color32::from_rgb(color[0], color[1], color[2]),
+                    });
+                    state.active_group_idx = new_group_idx;
+
                     for (px, py) in pts {
                         state.data_pts.push(crate::core::DataPoint {
                             px,
                             py,
                             lx: 0.0,
                             ly: 0.0,
-                            group_id: state.active_group_idx,
+                            group_id: new_group_idx,
                         });
                     }
                     crate::core::recalculate_data(

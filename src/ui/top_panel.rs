@@ -60,7 +60,7 @@ pub fn draw(state: &mut AppState, ctx: &egui::Context, actions: &mut Vec<Action>
             });
 
             ui.add_space(8.0);
-            ui.add(egui::Label::new("||").selectable(false));
+            ui.add(egui::Label::new("|").selectable(false));
             ui.add_space(8.0);
 
             // ── Quick-Access Toolbar Buttons ──────────────────────

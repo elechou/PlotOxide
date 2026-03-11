@@ -89,6 +89,8 @@ pub enum Action {
 
     // Mask Operations
     MaskToggle,
+    MaskToggleForAxis,
+    MaskFinishCalib,
     MaskSetTool(crate::state::MaskTool),
     MaskSetBrushSize(f32),
     MaskToggleVisibility,
@@ -96,8 +98,7 @@ pub enum Action {
     MaskPaintStart,
     MaskPaintStroke { x: f32, y: f32 },
     MaskPaintEnd,
-    MaskUndo,
-    MaskRedo,
+    MaskSetColorTolerance(f32),
 
     // Mask Axis Detection
     MaskSetAxisHighlight(Option<crate::state::AxisHighlight>),
