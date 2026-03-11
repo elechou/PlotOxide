@@ -232,6 +232,22 @@ fn extract_axis_and_ticks(
     is_horizontal: bool,
     active_set: &HashSet<(u32, u32)>,
 ) -> (Vec<(u32, u32)>, Vec<(f32, f32)>) {
+    // 0. Estimate axis body half-thickness from active_set (for adaptive tolerance)
+    let mut perp_distances: Vec<u32> = Vec::new();
+    for &(px, py) in active_set {
+        let perp = if is_horizontal { py } else { px };
+        let dist = (perp as i32 - axis_line as i32).abs() as u32;
+        perp_distances.push(dist);
+    }
+    perp_distances.sort();
+    let body_ext_estimate = if perp_distances.is_empty() {
+        1u32
+    } else {
+        // 25th percentile: most pixels are on the axis body
+        perp_distances[perp_distances.len() / 4].max(1)
+    };
+    let axis_tolerance = body_ext_estimate as i32 + 1;
+
     // 1. Break active_set into strictly connected components
     let mut unvisited: HashSet<(u32, u32)> = active_set.iter().copied().collect();
     let mut best_island: HashSet<(u32, u32)> = HashSet::new();
@@ -251,13 +267,13 @@ fn extract_axis_and_ticks(
         while let Some(curr) = queue.pop_front() {
             let (px, py) = curr;
             if is_horizontal {
-                if (py as i32 - axis_line as i32).abs() <= 1 {
+                if (py as i32 - axis_line as i32).abs() <= axis_tolerance {
                     touches_axis = true;
                 }
                 min_pos = min_pos.min(px);
                 max_pos = max_pos.max(px);
             } else {
-                if (px as i32 - axis_line as i32).abs() <= 1 {
+                if (px as i32 - axis_line as i32).abs() <= axis_tolerance {
                     touches_axis = true;
                 }
                 min_pos = min_pos.min(py);
@@ -310,18 +326,33 @@ fn extract_axis_and_ticks(
             .or_insert(ext);
     }
 
-    // 3. Auto-scale thresholds
-    let tick_min_ext = 2u32;
-    let tick_max_width = 12u32;
+    // 3. Auto-scale thresholds from measured axis body thickness
+    let mut ext_values: Vec<u32> = profile.values().copied().collect();
+    ext_values.sort();
+    let median_ext = if ext_values.is_empty() {
+        1u32
+    } else {
+        ext_values[ext_values.len() / 2].max(1)
+    };
+
+    // Tick must extend at least 2x the body half-thickness (clearly beyond the axis body)
+    let tick_min_ext = (median_ext * 2).max(2);
+
+    // Tick width is proportional to axis span (a tick shouldn't exceed 5% of axis length)
+    let mut sorted_along: Vec<u32> = profile.keys().copied().collect();
+    sorted_along.sort();
+    let axis_span = if sorted_along.is_empty() {
+        0
+    } else {
+        sorted_along.last().unwrap() - sorted_along.first().unwrap() + 1
+    };
+    let tick_max_width = ((axis_span as f32 * 0.05) as u32).max(3);
 
     // 4. Scan the profile for "bumps" (runs of extension >= tick_min_ext)
     let mut ticks: Vec<(f32, f32)> = Vec::new();
     let mut current_run: Vec<u32> = Vec::new();
 
-    let mut sorted_along: Vec<u32> = profile.keys().copied().collect();
-    sorted_along.sort();
-
-    let process_bump = |run: &[u32], ticks_out: &mut Vec<(f32, f32)>| {
+    let process_bump = |run: &[u32], ticks_out: &mut Vec<(f32, f32)>, max_w: u32| {
         if run.is_empty() {
             return;
         }
@@ -329,7 +360,7 @@ fn extract_axis_and_ticks(
         let r_end = *run.last().unwrap();
         let r_width = r_end - r_start + 1;
 
-        if r_width <= tick_max_width {
+        if r_width <= max_w {
             let center = (r_start + r_end) / 2;
             let tick_pos = if is_horizontal {
                 (center as f32, axis_line as f32)
@@ -340,25 +371,27 @@ fn extract_axis_and_ticks(
         }
     };
 
-    for pos in sorted_along {
+    for pos in &sorted_along {
+        let pos = *pos;
         let ext = *profile.get(&pos).unwrap();
         if ext >= tick_min_ext {
             if !current_run.is_empty() && pos > *current_run.last().unwrap() + 1 {
-                process_bump(&current_run, &mut ticks);
+                process_bump(&current_run, &mut ticks, tick_max_width);
                 current_run.clear();
             }
             current_run.push(pos);
         } else {
             if !current_run.is_empty() {
-                process_bump(&current_run, &mut ticks);
+                process_bump(&current_run, &mut ticks, tick_max_width);
                 current_run.clear();
             }
         }
     }
     if !current_run.is_empty() {
-        process_bump(&current_run, &mut ticks);
+        process_bump(&current_run, &mut ticks, tick_max_width);
     }
 
     let body_pixels_vec: Vec<(u32, u32)> = island.into_iter().collect();
     (body_pixels_vec, ticks)
 }
+
