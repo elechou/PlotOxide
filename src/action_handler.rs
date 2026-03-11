@@ -505,7 +505,7 @@ pub fn handle(state: &mut AppState, action: Action) {
 
             let mut new_state = AppState::default();
             if let Some(ref rgba) = decoded_rgba {
-                let bg_col = crate::ui::mask::analysis::detect_background_color(
+                let bg_col = crate::recognition::detect_background_color(
                     rgba,
                     size.x as u32,
                     size.y as u32,
@@ -525,7 +525,7 @@ pub fn handle(state: &mut AppState, action: Action) {
             let mut new_state = AppState::default();
             // Store decoded RGBA directly from clipboard data
             new_state.decoded_rgba = Some(bytes.clone());
-            let bg_col = crate::ui::mask::analysis::detect_background_color(&bytes, w, h);
+            let bg_col = crate::recognition::detect_background_color(&bytes, w, h);
             new_state.axis_mask.bg_color = Some(bg_col);
             new_state.data_mask.bg_color = Some(bg_col);
             new_state.clipboard_rgba = Some((bytes, w, h));
@@ -711,7 +711,7 @@ pub fn handle(state: &mut AppState, action: Action) {
                     match mask.mask_mode {
                         crate::state::MaskMode::AxisCalib => {
                             mask.axis_result = Some(
-                                crate::ui::mask::analysis::analyze_mask_for_axes(
+                                crate::recognition::axis::analyze_mask_for_axes(
                                     rgba, &mask.buffer, w, h, bg,
                                 ),
                             );
@@ -719,7 +719,7 @@ pub fn handle(state: &mut AppState, action: Action) {
                         }
                         crate::state::MaskMode::DataRecog => {
                             mask.data_result = Some(
-                                crate::ui::mask::analysis::analyze_mask_for_data(
+                                crate::recognition::data::analyze_mask_for_data(
                                     rgba, &mask.buffer, w, h, bg,
                                     mask.color_tolerance,
                                 ),
@@ -747,7 +747,7 @@ pub fn handle(state: &mut AppState, action: Action) {
                     let h = mask.height;
                     let bg = mask.bg_color.unwrap_or([255, 255, 255]);
                     mask.data_result = Some(
-                        crate::ui::mask::analysis::analyze_mask_for_data(
+                        crate::recognition::data::analyze_mask_for_data(
                             rgba, &mask.buffer, w, h, bg, tol,
                         ),
                     );
@@ -816,7 +816,7 @@ pub fn handle(state: &mut AppState, action: Action) {
                     match mode {
                         crate::state::DataCurveMode::Continuous => {
                             group.sampled_points =
-                                crate::ui::mask::analysis::sample_points_from_cluster(
+                                crate::recognition::sampling::sample_points_from_cluster(
                                     &group.pixel_coords,
                                     group.point_count,
                                     state.data_mask.width,
@@ -825,7 +825,7 @@ pub fn handle(state: &mut AppState, action: Action) {
                         crate::state::DataCurveMode::Scatter => {
                             // For scatter, use all unique points (centroid per column)
                             group.sampled_points =
-                                crate::ui::mask::analysis::sample_points_from_cluster(
+                                crate::recognition::sampling::sample_points_from_cluster(
                                     &group.pixel_coords,
                                     group.pixel_coords.len(),
                                     state.data_mask.width,
@@ -841,7 +841,7 @@ pub fn handle(state: &mut AppState, action: Action) {
                     group.point_count = count;
                     // Resample with new count
                     group.sampled_points =
-                        crate::ui::mask::analysis::sample_points_from_cluster(
+                        crate::recognition::sampling::sample_points_from_cluster(
                             &group.pixel_coords,
                             count,
                             state.data_mask.width,

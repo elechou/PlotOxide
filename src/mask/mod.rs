@@ -1,4 +1,3 @@
-pub mod analysis;
 pub mod results_panel;
 
 use eframe::egui;

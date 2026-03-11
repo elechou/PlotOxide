@@ -1,9 +1,12 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+pub mod action;
 mod action_handler;
 mod core;
 mod ide;
+mod mask;
 mod project;
+mod recognition;
 mod script;
 mod state;
 mod ui;
@@ -133,4 +136,3 @@ fn main() -> eframe::Result<()> {
         Box::new(|cc| Ok(Box::new(PlotRedoxApp::new(cc)))),
     )
 }
-pub mod action;

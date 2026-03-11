@@ -1,4 +1,3 @@
-pub mod mask;
 pub mod canvas;
 pub mod modals;
 pub mod panel;
