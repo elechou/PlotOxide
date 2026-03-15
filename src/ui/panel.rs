@@ -26,6 +26,8 @@ pub fn draw_panel(state: &mut AppState, ctx: &egui::Context, actions: &mut Vec<A
                 ui.strong(t(lang, "axes_calibration"));
                 ui.add_space(10.0);
 
+                // Warnings placed below text fields so their appearance/disappearance
+                // doesn't shift the input fields and steal focus mid-edit
                 if state.calib_pts.len() < 4 {
                     ui.colored_label(
                         Color32::RED,
@@ -36,26 +38,6 @@ pub fn draw_panel(state: &mut AppState, ctx: &egui::Context, actions: &mut Vec<A
                             state.calib_pts.len()
                         ),
                     );
-                    ui.add_space(5.0);
-                }
-
-                {
-                    let filled = [&state.x1_val, &state.x2_val, &state.y1_val, &state.y2_val]
-                        .iter()
-                        .filter(|v| v.parse::<f64>().is_ok())
-                        .count();
-                    if filled < 4 {
-                        ui.colored_label(
-                            Color32::from_rgb(200, 150, 0),
-                            format!(
-                                "{} {} ({}/4)",
-                                icons::ALERT,
-                                t(lang, "enter_tick_values"),
-                                filled
-                            ),
-                        );
-                        ui.add_space(5.0);
-                    }
                 }
 
                 let magic_active = state.axis_mask.active
@@ -96,7 +78,7 @@ pub fn draw_panel(state: &mut AppState, ctx: &egui::Context, actions: &mut Vec<A
                     }
 
                     let clear_btn = egui::Button::new(t(lang, "clear_axes"));
-                    if ui.add_sized([100.0, 20.0], clear_btn).clicked() {
+                    if ui.add_sized([108.0, 20.0], clear_btn).clicked() {
                         actions.push(Action::ClearCalib);
                     }
                 });
@@ -162,6 +144,25 @@ pub fn draw_panel(state: &mut AppState, ctx: &egui::Context, actions: &mut Vec<A
                         }
                     });
                 });
+
+                {
+                    let filled = [&state.x1_val, &state.x2_val, &state.y1_val, &state.y2_val]
+                        .iter()
+                        .filter(|v| v.parse::<f64>().is_ok())
+                        .count();
+                    if filled < 4 {
+                        ui.add_space(5.0);
+                        ui.colored_label(
+                            Color32::RED,
+                            format!(
+                                "{} {} ({}/4)",
+                                icons::ALERT,
+                                t(lang, "enter_tick_values"),
+                                filled
+                            ),
+                        );
+                    }
+                }
 
                 ui.add_space(10.0);
                 ui.horizontal(|ui| {

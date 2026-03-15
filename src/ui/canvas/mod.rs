@@ -135,14 +135,14 @@ pub fn draw_canvas(state: &mut AppState, ctx: &egui::Context, actions: &mut Vec<
                 text_pos + Vec2::new(1.0, 1.0),
                 text_align,
                 calib_labels[i],
-                egui::FontId::proportional(14.0),
+                egui::FontId::proportional(16.0),
                 Color32::BLACK,
             );
             painter.text(
                 text_pos,
                 text_align,
                 calib_labels[i],
-                egui::FontId::proportional(14.0),
+                egui::FontId::proportional(16.0),
                 col,
             );
         }
@@ -315,14 +315,14 @@ fn draw_axes(
             x1_val_pos + Vec2::new(1.0, 1.0),
             egui::Align2::CENTER_TOP,
             &state.x1_val,
-            egui::FontId::proportional(14.0),
+            egui::FontId::proportional(16.0),
             Color32::BLACK,
         );
         painter.text(
             x1_val_pos,
             egui::Align2::CENTER_TOP,
             &state.x1_val,
-            egui::FontId::proportional(14.0),
+            egui::FontId::proportional(16.0),
             text_color,
         );
 
@@ -331,14 +331,14 @@ fn draw_axes(
             x2_val_pos + Vec2::new(1.0, 1.0),
             egui::Align2::CENTER_TOP,
             &state.x2_val,
-            egui::FontId::proportional(14.0),
+            egui::FontId::proportional(16.0),
             Color32::BLACK,
         );
         painter.text(
             x2_val_pos,
             egui::Align2::CENTER_TOP,
             &state.x2_val,
-            egui::FontId::proportional(14.0),
+            egui::FontId::proportional(16.0),
             text_color,
         );
     }
@@ -382,14 +382,14 @@ fn draw_axes(
             y1_val_pos + Vec2::new(1.0, 1.0),
             egui::Align2::RIGHT_CENTER,
             &state.y1_val,
-            egui::FontId::proportional(14.0),
+            egui::FontId::proportional(16.0),
             Color32::BLACK,
         );
         painter.text(
             y1_val_pos,
             egui::Align2::RIGHT_CENTER,
             &state.y1_val,
-            egui::FontId::proportional(14.0),
+            egui::FontId::proportional(16.0),
             text_color,
         );
 
@@ -398,14 +398,14 @@ fn draw_axes(
             y2_val_pos + Vec2::new(1.0, 1.0),
             egui::Align2::RIGHT_CENTER,
             &state.y2_val,
-            egui::FontId::proportional(14.0),
+            egui::FontId::proportional(16.0),
             Color32::BLACK,
         );
         painter.text(
             y2_val_pos,
             egui::Align2::RIGHT_CENTER,
             &state.y2_val,
-            egui::FontId::proportional(14.0),
+            egui::FontId::proportional(16.0),
             text_color,
         );
     }

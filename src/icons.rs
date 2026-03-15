@@ -42,7 +42,7 @@ pub const ALERT: &str = "\u{f421}"; //  alert
 pub const INFO: &str = "\u{f449}"; //  information
 
 // Language
-pub const LANGUAGE: &str = "\u{f1ab}"; //  language
+pub const LANGUAGE: &str = "\u{f05ca}"; //  󰗊 language
 
 // Files
 pub const FILE: &str = "\u{f15b}"; //  file
