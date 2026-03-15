@@ -34,14 +34,12 @@ fn trigger_grid_removal(state: &mut AppState) {
         let w = state.img_size.x as u32;
         let h = state.img_size.y as u32;
         let strength = state.grid_removal.strength;
-        let log_x = state.log_x;
-        let log_y = state.log_y;
         let generation = state.grid_removal.compute_generation;
         let tx_clone = tx.clone();
 
         std::thread::spawn(move || {
             let cleaned = crate::recognition::grid_removal::remove_grid(
-                &rgba_clone, w, h, strength, log_x, log_y,
+                &rgba_clone, w, h, strength,
             );
             let _ = tx_clone.send(Action::ApplyGridRemoval(Arc::new(cleaned), generation));
         });
@@ -573,10 +571,6 @@ pub fn handle(state: &mut AppState, action: Action) {
                 state.log_x,
                 state.log_y,
             );
-            // Re-trigger grid removal if enabled (algorithm depends on log scale)
-            if state.grid_removal.enabled && state.grid_removal.cleaned_rgba.is_some() {
-                trigger_grid_removal(state);
-            }
         }
         Action::AddGroup => {
             let new_idx = state.groups.len();

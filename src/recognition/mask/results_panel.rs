@@ -130,6 +130,10 @@ fn draw_axis_section(mask: &crate::state::MaskState, ui: &mut egui::Ui, actions:
 
 fn draw_data_section(mask: &crate::state::MaskState, ui: &mut egui::Ui, actions: &mut Vec<Action>) {
     // Tolerance slider
+    ui.label(egui::RichText::new("Data Recognition").strong());
+    
+    ui.add_space(2.0);
+
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new("Color Tolerance:"));
         let mut tol = mask.color_tolerance;
@@ -159,9 +163,6 @@ fn draw_data_section(mask: &crate::state::MaskState, ui: &mut egui::Ui, actions:
             ui.label("No data colors detected.");
             return;
         }
-
-        ui.label(egui::RichText::new("Data Recognition").strong());
-        ui.add_space(2.0);
 
         // Calculate total non-background pixels for percentage display
         let total_pixels: usize = data_result

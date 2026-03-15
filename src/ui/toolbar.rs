@@ -143,22 +143,6 @@ pub fn draw_grid_removal_toolbar(
 
             ui.separator();
 
-            // Show current axis mode hint
-            let mode_label = match (state.log_x, state.log_y) {
-                (false, false) => "Linear / Linear",
-                (true, false) => "Log X / Linear Y",
-                (false, true) => "Linear X / Log Y",
-                (true, true) => "Log / Log",
-            };
-            ui.label(
-                egui::RichText::new(format!("Axes: {}", mode_label))
-                    .small()
-                    .color(egui::Color32::GRAY),
-            )
-            .on_hover_text("Set log scale in Axes Calibration panel. Log axes use spatial detection; linear axes use FFT.");
-
-            ui.separator();
-
             if ui.button("Disable").on_hover_text("Turn off grid removal and restore original image").clicked() {
                 actions.push(Action::GridRemovalDisable);
             }
