@@ -31,7 +31,7 @@ pub fn draw_editor(state: &mut AppState, ui: &mut egui::Ui, actions: &mut Vec<Ac
             let mut code = state.ide.code.clone();
 
             let theme = egui_extras::syntax_highlighting::CodeTheme::from_style(ui.style());
-            let mut layouter = |ui: &egui::Ui, buf: &dyn egui::TextBuffer, wrap_width: f32| {
+            let mut layouter = |ui: &egui::Ui, buf: &dyn egui::TextBuffer, _wrap_width: f32| {
                 let mut layout_job = egui_extras::syntax_highlighting::highlight_with(
                     ui.ctx(),
                     ui.style(),
@@ -40,7 +40,7 @@ pub fn draw_editor(state: &mut AppState, ui: &mut egui::Ui, actions: &mut Vec<Ac
                     "rs",
                     &EIGHTIES_SETTINGS,
                 );
-                layout_job.wrap.max_width = wrap_width;
+                layout_job.wrap.max_width = f32::INFINITY;
                 ui.fonts_mut(|f| f.layout_job(layout_job))
             };
 
@@ -55,7 +55,7 @@ pub fn draw_editor(state: &mut AppState, ui: &mut egui::Ui, actions: &mut Vec<Ac
             let available_rows = (ui.available_height() / row_height).floor() as usize;
             let desired_rows = available_rows.max(10) + 1;
 
-            egui::ScrollArea::vertical()
+            egui::ScrollArea::both()
                 .id_salt("ide_editor_scroll")
                 .show(ui, |ui| {
                     let editor = egui::TextEdit::multiline(&mut code)

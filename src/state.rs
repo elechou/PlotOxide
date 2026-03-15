@@ -563,13 +563,25 @@ pub struct AppState {
     pub mask_tx: Option<std::sync::mpsc::Sender<crate::action::Action>>,
 }
 
+/// An open inspector window — either a top-level workspace variable or a
+/// drill-down into a nested Array/Map value.
+#[derive(Clone)]
+pub struct InspectorEntry {
+    /// Unique key for dedup, e.g. "data" or "data.x[0]"
+    pub key: String,
+    /// Window title
+    pub label: String,
+    /// `Some(val)` for sub-inspectors; `None` means look up from workspace_vars
+    pub value: Option<rhai::Dynamic>,
+}
+
 #[derive(Clone)]
 pub struct IdeState {
     pub is_open: bool,
     pub code: String,
     pub output: String,
     pub workspace_vars: Vec<WorkspaceVar>,
-    pub open_inspectors: std::collections::HashSet<String>,
+    pub open_inspectors: Vec<InspectorEntry>,
     pub show_help: bool,
     pub user_scripts: Vec<(String, String)>, // (name, code)
     pub output_fraction: f32,
@@ -582,7 +594,7 @@ impl Default for IdeState {
             code: String::new(),
             output: String::new(),
             workspace_vars: Vec::new(),
-            open_inspectors: std::collections::HashSet::new(),
+            open_inspectors: Vec::new(),
             show_help: false,
             user_scripts: Vec::new(),
             output_fraction: 0.5,

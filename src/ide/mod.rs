@@ -104,7 +104,7 @@ pub fn draw_ide(state: &mut AppState, ctx: &egui::Context, actions: &mut Vec<Act
                     let delta = handle_resp.drag_delta().x;
                     // dragged right => editor bigger, output smaller => fraction smaller
                     fraction -= delta / content_width;
-                    fraction = fraction.clamp(0.1, 0.9);
+                    fraction = fraction.clamp(0.2, 0.8);
                     state.ide.output_fraction = fraction;
                 }
 

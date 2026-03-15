@@ -1,6 +1,6 @@
 [package]
 name = "plot-redox"
-version = "0.2.2"
+version = "0.2.3"
 edition = "2021"
 authors = ["Qiu Shou"]
 description = "Native high-performance plot digitizer alternative using Rust+egui"

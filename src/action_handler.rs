@@ -517,11 +517,17 @@ pub fn handle(state: &mut AppState, action: Action) {
         Action::AddUserScript(name, code) => {
             state.ide.user_scripts.push((name, code));
         }
-        Action::OpenInspector(group_name) => {
-            state.ide.open_inspectors.insert(group_name);
+        Action::OpenInspector(name) => {
+            if !state.ide.open_inspectors.iter().any(|e| e.key == name) {
+                state.ide.open_inspectors.push(crate::state::InspectorEntry {
+                    key: name.clone(),
+                    label: name,
+                    value: None,
+                });
+            }
         }
-        Action::CloseInspector(group_name) => {
-            state.ide.open_inspectors.remove(&group_name);
+        Action::CloseInspector(key) => {
+            state.ide.open_inspectors.retain(|e| e.key != key);
         }
         Action::ClearData => {
             state.reset_extraction_data();
