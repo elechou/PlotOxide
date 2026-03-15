@@ -27,8 +27,17 @@ pub fn draw_canvas(state: &mut AppState, ctx: &egui::Context, actions: &mut Vec<
 
         // --- Drawing ---
 
-        // Draw Image
-        if let Some(texture) = &state.texture {
+        // Draw Image (use cleaned texture if grid removal is active)
+        let display_texture = if state.grid_removal.enabled {
+            state
+                .grid_removal
+                .cleaned_texture
+                .as_ref()
+                .or(state.texture.as_ref())
+        } else {
+            state.texture.as_ref()
+        };
+        if let Some(texture) = display_texture {
             let rect = Rect::from_min_size(rect_min + pan, state.img_size * zoom);
             painter.image(
                 texture.id(),
@@ -150,6 +159,9 @@ pub fn draw_canvas(state: &mut AppState, ctx: &egui::Context, actions: &mut Vec<
         crate::recognition::mask::draw_mask_toolbar(state, ui, actions);
         crate::recognition::mask::results_panel::draw_results_panel(state, ui, actions);
         crate::recognition::mask::draw_mask_cursor(state, &painter, ctx, &response, zoom);
+
+        // --- Grid removal sub-toolbar ---
+        crate::ui::toolbar::draw_grid_removal_toolbar(state, ui, actions);
 
         // --- Cursor style ---
         let is_alt_pressed = ctx.input(|i| i.modifiers.alt);

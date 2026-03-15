@@ -114,6 +114,12 @@ pub enum Action {
     MaskSetAxisHighlight(Option<crate::state::AxisHighlight>),
     MaskApplyAxis(crate::state::AxisHighlight),
 
+    // Grid Removal
+    GridRemovalToggle,
+    GridRemovalSetStrength(f32),
+    GridRemovalDisable,
+    ApplyGridRemoval(std::sync::Arc<Vec<u8>>, u64),
+
     // Mask Data Recognition
     MaskSetDataHighlight(Option<usize>),
     MaskSetDataMode(usize, crate::state::DataCurveMode),

@@ -2,6 +2,51 @@ use crate::action::Action;
 use crate::core::{CalibPoint, DataPoint};
 use crate::state::{AppMode, AppState, HistorySnapshot, PointGroup};
 use eframe::egui::Color32;
+use std::sync::Arc;
+
+/// Helper to get the active RGBA from parts (avoids borrow conflicts).
+fn active_rgba_from_parts<'a>(
+    grid_removal: &'a crate::state::GridRemovalState,
+    decoded_rgba: &'a Option<Arc<Vec<u8>>>,
+) -> Option<&'a Arc<Vec<u8>>> {
+    if grid_removal.enabled {
+        grid_removal
+            .cleaned_rgba
+            .as_ref()
+            .or(decoded_rgba.as_ref())
+    } else {
+        decoded_rgba.as_ref()
+    }
+}
+
+/// Spawn a background thread to compute grid removal.
+/// Also called from project.rs during project load.
+pub fn trigger_grid_removal_for(state: &mut AppState) {
+    trigger_grid_removal(state);
+}
+
+fn trigger_grid_removal(state: &mut AppState) {
+    if let (Some(ref rgba_arc), Some(tx)) = (&state.decoded_rgba, &state.mask_tx) {
+        state.grid_removal.compute_generation += 1;
+        state.grid_removal.is_computing = true;
+
+        let rgba_clone = Arc::clone(rgba_arc);
+        let w = state.img_size.x as u32;
+        let h = state.img_size.y as u32;
+        let strength = state.grid_removal.strength;
+        let log_x = state.log_x;
+        let log_y = state.log_y;
+        let generation = state.grid_removal.compute_generation;
+        let tx_clone = tx.clone();
+
+        std::thread::spawn(move || {
+            let cleaned = crate::recognition::grid_removal::remove_grid(
+                &rgba_clone, w, h, strength, log_x, log_y,
+            );
+            let _ = tx_clone.send(Action::ApplyGridRemoval(Arc::new(cleaned), generation));
+        });
+    }
+}
 
 /// Re-trigger mask detection for the currently active mask after undo/redo.
 fn trigger_mask_redetection(state: &mut AppState) {
@@ -14,7 +59,11 @@ fn trigger_mask_redetection(state: &mut AppState) {
     };
 
     if mask.has_any_mask() {
-        if let (Some(ref rgba_arc), Some(tx)) = (&state.decoded_rgba, &state.mask_tx) {
+        let rgba_src = active_rgba_from_parts(
+            &state.grid_removal,
+            &state.decoded_rgba,
+        );
+        if let (Some(rgba_arc), Some(tx)) = (rgba_src, &state.mask_tx) {
             mask.compute_generation += 1;
             mask.is_computing = true;
 
@@ -524,6 +573,10 @@ pub fn handle(state: &mut AppState, action: Action) {
                 state.log_x,
                 state.log_y,
             );
+            // Re-trigger grid removal if enabled (algorithm depends on log scale)
+            if state.grid_removal.enabled && state.grid_removal.cleaned_rgba.is_some() {
+                trigger_grid_removal(state);
+            }
         }
         Action::AddGroup => {
             let new_idx = state.groups.len();
@@ -559,6 +612,11 @@ pub fn handle(state: &mut AppState, action: Action) {
                 state.data_mask.constrained_axis = None;
             } else if mode == AppMode::DataMask {
                 state.data_mask.active = true;
+            }
+            // GridRemoval mode is exclusive with mask modes
+            if mode == AppMode::GridRemoval {
+                state.axis_mask.active = false;
+                state.data_mask.active = false;
             }
             state.mode = mode;
         }
@@ -789,6 +847,7 @@ pub fn handle(state: &mut AppState, action: Action) {
                 decoded_rgba,
                 axis_mask,
                 data_mask,
+                grid_removal,
                 mask_tx,
                 ..
             } = state;
@@ -806,7 +865,8 @@ pub fn handle(state: &mut AppState, action: Action) {
             mask.stroke_snapshot = Vec::new();
 
             if mask.has_any_mask() {
-                if let (Some(ref rgba_arc), Some(tx)) = (decoded_rgba, mask_tx) {
+                let rgba_src = active_rgba_from_parts(grid_removal, decoded_rgba);
+                if let (Some(rgba_arc), Some(tx)) = (rgba_src, mask_tx) {
                     mask.compute_generation += 1;
                     mask.is_computing = true;
 
@@ -899,6 +959,7 @@ pub fn handle(state: &mut AppState, action: Action) {
                 decoded_rgba,
                 axis_mask,
                 data_mask,
+                grid_removal,
                 mask_tx,
                 ..
             } = state;
@@ -909,7 +970,8 @@ pub fn handle(state: &mut AppState, action: Action) {
             };
             mask.color_tolerance = tol;
             if mask.has_any_mask() {
-                if let (Some(ref rgba_arc), Some(tx)) = (decoded_rgba, mask_tx) {
+                let rgba_src = active_rgba_from_parts(grid_removal, decoded_rgba);
+                if let (Some(rgba_arc), Some(tx)) = (rgba_src, mask_tx) {
                     mask.compute_generation += 1;
                     mask.is_computing = true;
 
@@ -1035,6 +1097,47 @@ pub fn handle(state: &mut AppState, action: Action) {
                 }
             }
         }
+        // ── Grid Removal ──
+        Action::GridRemovalToggle => {
+            if state.mode == AppMode::GridRemoval {
+                // Leave GridRemoval mode but keep enabled
+                state.mode = AppMode::Select;
+            } else {
+                // Enter GridRemoval mode
+                state.grid_removal.enabled = true;
+                state.mode = AppMode::GridRemoval;
+                // Deactivate mask modes
+                state.axis_mask.active = false;
+                state.data_mask.active = false;
+                // Trigger computation if we don't have a cleaned image yet
+                if state.grid_removal.cleaned_rgba.is_none() && state.decoded_rgba.is_some() {
+                    trigger_grid_removal(state);
+                }
+            }
+        }
+        Action::GridRemovalSetStrength(s) => {
+            state.grid_removal.strength = s;
+            state.grid_removal.pending_strength = Some(s);
+            state.grid_removal.pending_since = Some(std::time::Instant::now());
+        }
+        Action::GridRemovalDisable => {
+            state.grid_removal.enabled = false;
+            state.grid_removal.cleaned_rgba = None;
+            state.grid_removal.cleaned_texture = None;
+            if state.mode == AppMode::GridRemoval {
+                state.mode = AppMode::Select;
+            }
+        }
+        Action::ApplyGridRemoval(cleaned, gen) => {
+            if state.grid_removal.compute_generation == gen {
+                // Build texture from cleaned RGBA
+                state.grid_removal.cleaned_rgba = Some(cleaned);
+                // Mark texture as needing rebuild (done in UI draw)
+                state.grid_removal.cleaned_texture = None;
+                state.grid_removal.is_computing = false;
+            }
+        }
+
         Action::MaskAddData(idx) => {
             // Clone both the color and sampled points before mutating state
             let group_data = state.data_mask.data_result.as_ref().and_then(|result| {

@@ -37,6 +37,8 @@ fn build_project_data(state: &AppState) -> ProjectData {
         },
         axis_mask: SerializableMask::from_mask(&state.axis_mask),
         data_mask: SerializableMask::from_mask(&state.data_mask),
+        grid_removal_enabled: state.grid_removal.enabled,
+        grid_removal_strength: state.grid_removal.strength,
     }
 }
 
@@ -263,6 +265,13 @@ pub fn apply_project(
     state.ide.open_inspectors.clear();
     state.ide.show_help = false;
 
+    // Restore grid removal settings
+    state.grid_removal.enabled = data.grid_removal_enabled;
+    state.grid_removal.strength = data.grid_removal_strength;
+    if state.grid_removal.enabled && state.decoded_rgba.is_some() {
+        crate::action_handler::trigger_grid_removal_for(state);
+    }
+
     // Restore mask buffers and trigger re-detection
     if let Some(ref mask_data) = data.axis_mask {
         let buf = mask_data.to_buffer();
@@ -396,6 +405,8 @@ mod tests {
             },
             axis_mask: None,
             data_mask: None,
+            grid_removal_enabled: false,
+            grid_removal_strength: 0.5,
         };
 
         let json = serde_json::to_string(&data).expect("serialize");

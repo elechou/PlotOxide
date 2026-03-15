@@ -3,6 +3,7 @@ use crate::script::WorkspaceVar;
 use eframe::egui::{Color32, TextureHandle, Vec2};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use std::sync::Arc;
 
 // ── Mask types ─────────────────────────────────────────────────────────
 
@@ -398,6 +399,8 @@ pub struct ProjectData {
     pub ide: SerializableIdeState,
     pub axis_mask: Option<SerializableMask>,
     pub data_mask: Option<SerializableMask>,
+    pub grid_removal_enabled: bool,
+    pub grid_removal_strength: f32,
 }
 
 // ── Runtime types ──────────────────────────────────────────────────────
@@ -420,6 +423,34 @@ pub struct HistorySnapshot {
     pub data_mask_buffer: Option<Vec<bool>>,
 }
 
+// ── Grid Removal state ─────────────────────────────────────────────────
+#[derive(Clone)]
+pub struct GridRemovalState {
+    pub enabled: bool,
+    pub strength: f32,
+    pub cleaned_rgba: Option<Arc<Vec<u8>>>,
+    pub cleaned_texture: Option<TextureHandle>,
+    pub is_computing: bool,
+    pub compute_generation: u64,
+    pub pending_strength: Option<f32>,
+    pub pending_since: Option<std::time::Instant>,
+}
+
+impl Default for GridRemovalState {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            strength: 0.5,
+            cleaned_rgba: None,
+            cleaned_texture: None,
+            is_computing: false,
+            compute_generation: 0,
+            pending_strength: None,
+            pending_since: None,
+        }
+    }
+}
+
 #[derive(PartialEq, Clone, Copy, Debug)]
 pub enum AppMode {
     Select,
@@ -429,6 +460,7 @@ pub enum AppMode {
     Pan,
     AxisMask,
     DataMask,
+    GridRemoval,
 }
 
 /// Actions that are deferred until unsaved-changes confirmation is resolved.
@@ -523,6 +555,9 @@ pub struct AppState {
     pub axis_mask: MaskState,
     pub data_mask: MaskState,
 
+    // Grid Removal State
+    pub grid_removal: GridRemovalState,
+
     // Thread communication channel for async background detection
     pub mask_rx: Option<std::sync::mpsc::Receiver<crate::action::Action>>,
     pub mask_tx: Option<std::sync::mpsc::Sender<crate::action::Action>>,
@@ -604,6 +639,7 @@ impl Default for AppState {
                 mask_mode: MaskMode::DataRecog,
                 ..Default::default()
             },
+            grid_removal: GridRemovalState::default(),
             mask_rx: None,
             mask_tx: None,
         }
