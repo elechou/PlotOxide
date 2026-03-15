@@ -325,6 +325,59 @@ pub struct SerializableIdeState {
     pub user_scripts: Vec<(String, String)>,
 }
 
+/// Run-length encoded mask buffer for compact serialization.
+/// Stores alternating runs of `false` and `true` values, starting with `false`.
+#[derive(Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct SerializableMask {
+    pub width: u32,
+    pub height: u32,
+    /// RLE counts: alternating runs starting with `false`.
+    pub rle: Vec<u32>,
+    pub color_tolerance: f32,
+}
+
+impl SerializableMask {
+    pub fn from_mask(mask: &MaskState) -> Option<Self> {
+        if mask.buffer.is_empty() || !mask.has_any_mask() {
+            return None;
+        }
+        let mut rle = Vec::new();
+        let mut current = false; // always start counting `false`
+        let mut count: u32 = 0;
+        for &val in &mask.buffer {
+            if val == current {
+                count += 1;
+            } else {
+                rle.push(count);
+                current = val;
+                count = 1;
+            }
+        }
+        rle.push(count);
+        Some(Self {
+            width: mask.width,
+            height: mask.height,
+            rle,
+            color_tolerance: mask.color_tolerance,
+        })
+    }
+
+    pub fn to_buffer(&self) -> Vec<bool> {
+        let total = (self.width as usize) * (self.height as usize);
+        let mut buf = Vec::with_capacity(total);
+        let mut current = false;
+        for &count in &self.rle {
+            for _ in 0..count {
+                buf.push(current);
+            }
+            current = !current;
+        }
+        buf.truncate(total);
+        buf
+    }
+}
+
 /// The on-disk representation of a project.
 /// All fields have `#[serde(default)]` so that adding new fields in the future
 /// is fully backwards-compatible: old files simply get the default value.
@@ -343,6 +396,8 @@ pub struct ProjectData {
     pub log_x: bool,
     pub log_y: bool,
     pub ide: SerializableIdeState,
+    pub axis_mask: Option<SerializableMask>,
+    pub data_mask: Option<SerializableMask>,
 }
 
 // ── Runtime types ──────────────────────────────────────────────────────

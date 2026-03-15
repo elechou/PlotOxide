@@ -1,4 +1,4 @@
-use crate::state::{AppState, PointGroup, ProjectData, SerializableGroup, SerializableIdeState};
+use crate::state::{AppState, PointGroup, ProjectData, SerializableGroup, SerializableIdeState, SerializableMask};
 use eframe::egui;
 use rfd::FileDialog;
 use std::io::{Read, Write};
@@ -35,6 +35,8 @@ fn build_project_data(state: &AppState) -> ProjectData {
             code: state.ide.code.clone(),
             user_scripts: state.ide.user_scripts.clone(),
         },
+        axis_mask: SerializableMask::from_mask(&state.axis_mask),
+        data_mask: SerializableMask::from_mask(&state.data_mask),
     }
 }
 
@@ -172,19 +174,36 @@ pub fn apply_project(
     file_path: PathBuf,
     ctx: &egui::Context,
 ) {
-    // Rebuild texture from image bytes
+    // Rebuild texture from image bytes and decode RGBA for mask analysis
+    let mut img_w: u32 = 0;
+    let mut img_h: u32 = 0;
     if let Ok(img) = image::load_from_memory(image_bytes) {
         let img = img.to_rgba8();
-        let size = [img.width() as usize, img.height() as usize];
+        img_w = img.width();
+        img_h = img.height();
+        let size = [img_w as usize, img_h as usize];
         let pixels = img.as_flat_samples();
         let color_image = egui::ColorImage::from_rgba_unmultiplied(size, pixels.as_slice());
         let handle = ctx.load_texture("main_image", color_image, Default::default());
         state.texture = Some(handle);
         state.img_size = egui::Vec2::new(size[0] as f32, size[1] as f32);
+        state.decoded_rgba = Some(std::sync::Arc::new(img.into_raw()));
     }
 
     state.image_path = Some(file_path);
     state.raw_image_bytes = Some(image_bytes.to_vec());
+
+    // Set up mpsc channels for async mask detection
+    let (tx, rx) = std::sync::mpsc::channel();
+    state.mask_tx = Some(tx);
+    state.mask_rx = Some(rx);
+
+    // Detect background color
+    if let Some(ref rgba) = state.decoded_rgba {
+        let bg_col = crate::recognition::detect_background_color(rgba, img_w, img_h);
+        state.axis_mask.bg_color = Some(bg_col);
+        state.data_mask.bg_color = Some(bg_col);
+    }
 
     // Core data
     state.calib_pts = data.calib_pts;
@@ -244,6 +263,34 @@ pub fn apply_project(
     state.ide.open_inspectors.clear();
     state.ide.show_help = false;
 
+    // Restore mask buffers and trigger re-detection
+    if let Some(ref mask_data) = data.axis_mask {
+        let buf = mask_data.to_buffer();
+        state.axis_mask.width = mask_data.width;
+        state.axis_mask.height = mask_data.height;
+        state.axis_mask.color_tolerance = mask_data.color_tolerance;
+        state.axis_mask.buffer = buf;
+        state.axis_mask.texture_dirty = true;
+        trigger_mask_detection_for(
+            &mut state.axis_mask,
+            &state.decoded_rgba,
+            &state.mask_tx,
+        );
+    }
+    if let Some(ref mask_data) = data.data_mask {
+        let buf = mask_data.to_buffer();
+        state.data_mask.width = mask_data.width;
+        state.data_mask.height = mask_data.height;
+        state.data_mask.color_tolerance = mask_data.color_tolerance;
+        state.data_mask.buffer = buf;
+        state.data_mask.texture_dirty = true;
+        trigger_mask_detection_for(
+            &mut state.data_mask,
+            &state.decoded_rgba,
+            &state.mask_tx,
+        );
+    }
+
     // Recalculate logical coordinates
     crate::core::recalculate_data(
         &state.calib_pts,
@@ -255,6 +302,57 @@ pub fn apply_project(
         state.log_x,
         state.log_y,
     );
+}
+
+/// Trigger background mask detection for a single mask.
+fn trigger_mask_detection_for(
+    mask: &mut crate::state::MaskState,
+    decoded_rgba: &Option<std::sync::Arc<Vec<u8>>>,
+    mask_tx: &Option<std::sync::mpsc::Sender<crate::action::Action>>,
+) {
+    if !mask.has_any_mask() {
+        return;
+    }
+    if let (Some(ref rgba_arc), Some(tx)) = (decoded_rgba, mask_tx) {
+        mask.compute_generation += 1;
+        mask.is_computing = true;
+
+        let w = mask.width;
+        let h = mask.height;
+        let bg = mask.bg_color.unwrap_or([255, 255, 255]);
+        let buffer_clone = mask.buffer.clone();
+        let rgba_clone = std::sync::Arc::clone(rgba_arc);
+        let mode_clone = mask.mask_mode;
+        let color_tolerance = mask.color_tolerance;
+        let generation = mask.compute_generation;
+        let tx_clone = tx.clone();
+
+        std::thread::spawn(move || {
+            match mode_clone {
+                crate::state::MaskMode::AxisCalib => {
+                    let result = crate::recognition::axis::analyze_mask_for_axes(
+                        &rgba_clone,
+                        &buffer_clone,
+                        w,
+                        h,
+                        bg,
+                    );
+                    let _ = tx_clone.send(crate::action::Action::ApplyAxisDetection(result, generation));
+                }
+                crate::state::MaskMode::DataRecog => {
+                    let result = crate::recognition::data::analyze_mask_for_data(
+                        &rgba_clone,
+                        &buffer_clone,
+                        w,
+                        h,
+                        bg,
+                        color_tolerance,
+                    );
+                    let _ = tx_clone.send(crate::action::Action::ApplyDataDetection(result, generation));
+                }
+            }
+        });
+    }
 }
 
 // ── Tests ──────────────────────────────────────────────────────────────
@@ -296,6 +394,8 @@ mod tests {
                 code: "print(42);".to_string(),
                 user_scripts: vec![("script1".to_string(), "let x = 1;".to_string())],
             },
+            axis_mask: None,
+            data_mask: None,
         };
 
         let json = serde_json::to_string(&data).expect("serialize");
