@@ -1,94 +1,9 @@
-pub mod results_panel;
-
 use eframe::egui;
 use egui::epaint::PathStroke;
 use egui::{Color32, ColorImage, Pos2, Rect, Stroke, TextureOptions};
 use std::collections::{HashMap, HashSet, VecDeque};
 
-use crate::action::Action;
-use crate::icons;
 use crate::state::{AppState, AxisHighlight, CachedHighlight, MaskState, MaskTool, PixelBounds};
-
-// ────────────────────────────────────────────────────────────────
-//  Mask Sub-Toolbar (anchored at canvas top-left)
-// ────────────────────────────────────────────────────────────────
-
-pub fn draw_mask_toolbar(state: &AppState, ui: &mut egui::Ui, actions: &mut Vec<Action>) {
-    let mask = if state.axis_mask.active {
-        &state.axis_mask
-    } else if state.data_mask.active {
-        &state.data_mask
-    } else {
-        return;
-    };
-
-    let window = egui::Window::new("Mask Sub-Toolbar")
-        .collapsible(false)
-        .resizable(false)
-        .title_bar(false)
-        .default_width(280.0)
-        .anchor(egui::Align2::RIGHT_TOP, [-5.0, 60.0])
-        .order(egui::Order::Foreground);
-
-    window.show(ui.ctx(), |ui| {
-        ui.horizontal(|ui| {
-            if ui
-                .selectable_label(mask.tool == MaskTool::Pen, format!("{} Brush", icons::BRUSH))
-                .on_hover_text("Paint mask")
-                .clicked()
-            {
-                actions.push(Action::MaskSetTool(MaskTool::Pen));
-            }
-            if ui
-                .selectable_label(mask.tool == MaskTool::Eraser, format!("{} Eraser", icons::ERASER))
-                .on_hover_text("Erase mask")
-                .clicked()
-            {
-                actions.push(Action::MaskSetTool(MaskTool::Eraser));
-            }
-
-            // Compact brush size slider (no label, narrow)
-            let mut size = mask.brush_size;
-            let slider = egui::Slider::new(&mut size, 2.0..=80.0)
-                .step_by(1.0)
-                .show_value(false);
-            if ui
-                .add_sized([40.0, 18.0], slider)
-                .on_hover_text(format!("Brush size: {:.0} px", mask.brush_size))
-                .changed()
-            {
-                actions.push(Action::MaskSetBrushSize(size));
-            }
-
-            // Icon-only visibility toggle
-            let vis_icon = if mask.visible {
-                icons::EYE
-            } else {
-                icons::EYE_OFF
-            };
-
-            if ui
-                .add_sized(
-                    egui::vec2(22.0, 18.0),
-                    egui::Button::new(vis_icon).selected(!mask.visible),
-                )
-                .on_hover_text(if mask.visible {
-                    "Hide mask overlay"
-                } else {
-                    "Show mask overlay"
-                })
-                .clicked()
-            {
-                actions.push(Action::MaskToggleVisibility);
-            }
-
-            // Icon-only clear button
-            if ui.button(icons::TRASH).on_hover_text("Clear all mask").clicked() {
-                actions.push(Action::MaskClear);
-            }
-        });
-    });
-}
 
 // ────────────────────────────────────────────────────────────────
 //  Mask Overlay Rendering

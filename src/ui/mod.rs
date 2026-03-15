@@ -1,6 +1,7 @@
 pub mod canvas;
 pub mod modals;
 pub mod panel;
+pub mod sub_toolbar;
 pub mod toolbar;
 pub mod top_panel;
 

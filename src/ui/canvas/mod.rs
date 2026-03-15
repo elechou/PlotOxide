@@ -155,13 +155,11 @@ pub fn draw_canvas(state: &mut AppState, ctx: &egui::Context, actions: &mut Vec<
         // --- Toolbar overlay ---
         draw_toolbar(state, ui, response.rect, actions);
 
-        // --- Mask sub-toolbar + results panel + brush cursor ---
-        crate::recognition::mask::draw_mask_toolbar(state, ui, actions);
-        crate::recognition::mask::results_panel::draw_results_panel(state, ui, actions);
-        crate::recognition::mask::draw_mask_cursor(state, &painter, ctx, &response, zoom);
+        // --- Sub-toolbar (mask brush + results, or grid removal) ---
+        crate::ui::sub_toolbar::draw_sub_toolbar(state, ui, actions);
 
-        // --- Grid removal sub-toolbar ---
-        crate::ui::toolbar::draw_grid_removal_toolbar(state, ui, actions);
+        // --- Mask brush cursor ---
+        crate::recognition::mask::draw_mask_cursor(state, &painter, ctx, &response, zoom);
 
         // --- Cursor style ---
         let is_alt_pressed = ctx.input(|i| i.modifiers.alt);
