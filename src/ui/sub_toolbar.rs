@@ -4,7 +4,7 @@ use egui::Color32;
 use crate::action::Action;
 use crate::i18n::{t, Lang};
 use crate::icons;
-use crate::state::{AppMode, AppState, AxisHighlight, MaskMode, MaskState, MaskTool};
+use crate::state::{AppState, AxisHighlight, MaskMode, MaskState, MaskTool};
 
 // ────────────────────────────────────────────────────────────────
 //  Sub-Toolbar: secondary toolbar that appears below the main
@@ -15,9 +15,9 @@ use crate::state::{AppMode, AppState, AxisHighlight, MaskMode, MaskState, MaskTo
 pub fn draw_sub_toolbar(state: &mut AppState, ui: &mut egui::Ui, actions: &mut Vec<Action>) {
     if state.axis_mask.active || state.data_mask.active {
         draw_mask_window(state, ui, actions);
-    } else if state.mode == AppMode::GridRemoval {
-        draw_grid_removal_toolbar(state, ui, actions);
     }
+    // Grid removal housekeeping (debounce + texture build) runs always
+    handle_grid_removal_housekeeping(state, ui);
 }
 
 // ────────────────────────────────────────────────────────────────
@@ -61,6 +61,12 @@ fn draw_mask_window(state: &mut AppState, ui: &mut egui::Ui, actions: &mut Vec<A
                 MaskMode::AxisCalib => draw_axis_section(mask, lang, ui, actions),
                 MaskMode::DataRecog => draw_data_section(mask, lang, ui, actions),
             }
+        }
+
+        // Grid removal controls (only in data mask mode)
+        if state.data_mask.active {
+            ui.separator();
+            draw_grid_removal_section(state, lang, ui, actions);
         }
     });
 }
@@ -379,49 +385,45 @@ fn draw_data_section(mask: &MaskState, lang: Lang, ui: &mut egui::Ui, actions: &
 }
 
 // ────────────────────────────────────────────────────────────────
-//  Grid Removal Sub-Toolbar
+//  Grid Removal (integrated into data mask sub-toolbar)
 // ────────────────────────────────────────────────────────────────
 
-fn draw_grid_removal_toolbar(
+fn draw_grid_removal_section(
     state: &mut AppState,
+    lang: crate::i18n::Lang,
     ui: &mut egui::Ui,
     actions: &mut Vec<Action>,
 ) {
-    let lang = state.lang;
-    let screen = ui.ctx().viewport_rect();
-    let window = egui::Window::new("Grid Removal")
-        .collapsible(false)
-        .resizable(false)
-        .title_bar(false)
-        .pivot(egui::Align2::RIGHT_TOP)
-        .default_pos([screen.max.x - 5.0, 60.0]);
+    ui.horizontal(|ui| {
+        let mut enabled = state.grid_removal.enabled;
+        if ui
+            .checkbox(&mut enabled, format!("{} {}", icons::GRID, t(lang, "grid")))
+            .changed()
+        {
+            if enabled {
+                actions.push(Action::GridRemovalEnable);
+            } else {
+                actions.push(Action::GridRemovalDisable);
+            }
+        }
+    });
 
-    window.show(ui.ctx(), |ui| {
+    if state.grid_removal.enabled {
         ui.horizontal(|ui| {
             if state.grid_removal.is_computing {
                 ui.spinner();
-                ui.label(t(lang, "processing"));
             }
-
             ui.label(t(lang, "strength"));
             let mut strength = state.grid_removal.strength;
             let slider = egui::Slider::new(&mut strength, 0.0..=1.0).step_by(0.01);
             if ui.add(slider).changed() {
                 actions.push(Action::GridRemovalSetStrength(strength));
             }
-
-            ui.separator();
-
-            if ui
-                .button(t(lang, "disable"))
-                .on_hover_text(t(lang, "hover_disable_grid"))
-                .clicked()
-            {
-                actions.push(Action::GridRemovalDisable);
-            }
         });
-    });
+    }
+}
 
+fn handle_grid_removal_housekeeping(state: &mut AppState, ui: &mut egui::Ui) {
     // Debounce: check if pending strength should trigger recomputation
     if let (Some(_pending), Some(since)) = (
         state.grid_removal.pending_strength,

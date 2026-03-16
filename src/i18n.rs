@@ -66,8 +66,6 @@ pub fn t(lang: Lang, key: &str) -> &'static str {
         (_, "hover_axis_mask") => "Auto-detect axes by painting a mask",
         (Lang::Zh, "hover_data_mask") => "绘制蒙版自动提取数据点",
         (_, "hover_data_mask") => "Auto-extract data points using color recognition via a painted mask",
-        (Lang::Zh, "hover_grid_removal") => "使用 FFT 滤波去除网格线",
-        (_, "hover_grid_removal") => "Remove grid lines from image using FFT filtering",
         (Lang::Zh, "hover_pan") => "左键/鼠标中键拖拽平移画布（或按住空格）",
         (_, "hover_pan") => "Left-click and drag to pan canvas (or hold Space)",
         (Lang::Zh, "hover_center") => "居中画布以适应窗口",
@@ -170,10 +168,6 @@ pub fn t(lang: Lang, key: &str) -> &'static str {
         (_, "processing") => "Processing...",
         (Lang::Zh, "strength") => "强度：",
         (_, "strength") => "Strength:",
-        (Lang::Zh, "disable") => "禁用",
-        (_, "disable") => "Disable",
-        (Lang::Zh, "hover_disable_grid") => "关闭网格去除并恢复原图",
-        (_, "hover_disable_grid") => "Turn off grid removal and restore original image",
 
         // ── modals.rs ──
         (Lang::Zh, "unsaved_changes") => "未保存的更改",

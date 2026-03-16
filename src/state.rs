@@ -463,7 +463,6 @@ pub enum AppMode {
     Pan,
     AxisMask,
     DataMask,
-    GridRemoval,
 }
 
 /// Actions that are deferred until unsaved-changes confirmation is resolved.

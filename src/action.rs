@@ -115,7 +115,7 @@ pub enum Action {
     MaskApplyAxis(crate::state::AxisHighlight),
 
     // Grid Removal
-    GridRemovalToggle,
+    GridRemovalEnable,
     GridRemovalSetStrength(f32),
     GridRemovalDisable,
     ApplyGridRemoval(std::sync::Arc<Vec<u8>>, u64),

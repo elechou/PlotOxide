@@ -78,18 +78,6 @@ pub fn draw_toolbar(
                 actions.push(Action::MaskToggle);
             }
 
-            let grid_active = state.mode == AppMode::GridRemoval;
-            if ui
-                .selectable_label(
-                    grid_active,
-                    format!("{} {}", icons::GRID, t(lang, "grid")),
-                )
-                .on_hover_text(t(lang, "hover_grid_removal"))
-                .clicked()
-            {
-                actions.push(Action::GridRemovalToggle);
-            }
-
             let is_space_pressed = ui.ctx().input(|i| i.key_down(egui::Key::Space));
             if ui
                 .selectable_label(
